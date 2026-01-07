@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #000; /* Black for bars */
+    cursor: crosshair;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+}
+
+#canvas-container {
+    position: relative;
+    box-shadow: 0 0 100px rgba(14, 165, 233, 0.1);
+    overflow: hidden;
+}
+
+canvas {
+    display: block;
+    filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.5));
+    background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
+}
+
+/* Custom animations for UI */
+@keyframes pulse-red {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.8; }
+}
+
+.warning-pulse {
+    animation: pulse-red 1s infinite;
+}
+
+.glass-morphism {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fire-icon-glow {
+    filter: drop-shadow(0 0 5px #f97316);
+}
+
+#gameCanvas {
+    background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
+}

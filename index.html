@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="vi" class="bg-black">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Space Shooter Pro | Galactic Defender</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body class="antialiased select-none touch-none">
+
+    <!-- Game Container for Aspect Ratio -->
+    <div id="canvas-container" class="aspect-[9/14] h-full max-h-screen relative shadow-2xl">
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas" class="w-full h-full"></canvas>
+        
+        <!-- UI Overlay Layer -->
+        <div id="ui-layer" class="absolute inset-0 pointer-events-none z-10 p-4 flex flex-col justify-between text-white">
+            
+            <!-- TOP HUD -->
+            <div class="flex justify-between items-start">
+                <!-- Score & Level & HP -->
+                <div class="glass-morphism rounded-2xl p-3 min-w-[160px]">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 italic">Vanguard Unit</div>
+                    <div class="flex flex-col gap-2">
+                        <!-- HP Bar -->
+                        <div class="flex flex-col gap-1">
+                            <div class="h-2 w-full bg-slate-950/50 rounded-full overflow-hidden border border-white/5">
+                                <div id="hp-bar-inner" class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300" style="width: 100%"></div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                            <div class="text-2xl font-black text-amber-400 font-mono leading-none tracking-tighter">
+                                <span id="score-val">0</span>
+                            </div>
+                            <span class="text-[10px] bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">LVL <span id="level-val">1</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOOM System -->
+                <div class="flex flex-col items-end gap-2">
+                    <div id="boom-slots" class="flex gap-1">
+                        <!-- Loaded dynamically in JS -->
+                    </div>
+                    <div class="w-32 bg-slate-900/80 rounded-full h-1.5 overflow-hidden border border-white/5 backdrop-blur-sm">
+                        <div id="boom-bar-inner" class="h-full bg-gradient-to-r from-orange-500 to-red-500 shadow-[0_0_8px_orange]" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CENTER ANNOUNCEMENTS -->
+            <div id="boss-warning" class="hidden self-center flex flex-col items-center">
+                <div class="text-3xl font-black text-red-600 tracking-tighter warning-pulse mb-2">
+                    ⚠️ BOSS DETECTED ⚠️
+                </div>
+            </div>
+
+            <!-- BOTTOM MOBILE CONTROLS -->
+            <div id="mobile-controls" class="flex justify-between items-end pointer-events-none mb-8 px-4 opacity-0 transition-opacity duration-500">
+                <!-- Virtual Joystick Area -->
+                <div id="joystick-zone" class="pointer-events-auto w-32 h-32 relative flex items-center justify-center">
+                    <div class="w-24 h-24 rounded-full border-4 border-white/10 bg-white/5 backdrop-blur-sm"></div>
+                    <div id="joystick-knob" class="absolute w-12 h-12 rounded-full bg-slate-200 shadow-xl border-2 border-white/20 transform translate-x-0 translate-y-0"></div>
+                </div>
+                
+                <!-- On-screen Missile Button for Mobile -->
+                <button id="mobile-fire" class="pointer-events-auto w-20 h-20 rounded-full glass-morphism border-2 border-orange-500/50 flex items-center justify-center active:scale-90 transition-all shadow-2xl shadow-orange-500/20">
+                    <img src="Public/Fire.png" class="w-12 h-12 object-contain rotate-[-45deg]">
+                </button>
+            </div>
+        </div>
+
+        <!-- PAUSE SCREEN -->
+        <div id="pause-screen" class="hidden absolute inset-0 z-40 bg-slate-950/60 backdrop-blur-md items-center justify-center p-6">
+            <div class="glass-morphism p-10 rounded-3xl border border-white/10 text-center flex flex-col items-center gap-6">
+                <h2 class="text-3xl font-black text-white italic tracking-tighter">MISSION PAUSED</h2>
+                <div class="text-slate-400 text-xs uppercase tracking-widest">Space or Right-Click to Resume</div>
+                <button onclick="togglePause()" class="w-full bg-amber-400 text-slate-950 py-4 rounded-xl font-black text-lg hover:scale-[1.02] active:scale-95 transition-all shadow-xl">
+                    RESUME
+                </button>
+            </div>
+        </div>
+
+        <!-- GAME OVER SCREEN -->
+        <div id="game-over-screen" class="hidden absolute inset-0 z-50 bg-slate-950/95 items-center justify-center p-6">
+            <div class="glass-morphism p-8 rounded-3xl border border-red-500/20 w-full text-center flex flex-col items-center gap-6">
+                <h1 class="text-4xl font-black text-red-600 italic tracking-tighter">MISSION ABORTED</h1>
+                <div class="flex gap-4 w-full">
+                    <div class="bg-slate-900/50 p-4 rounded-xl flex-1">
+                        <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Score</div>
+                        <div id="final-score-val" class="text-2xl font-bold text-white leading-none">0</div>
+                    </div>
+                    <div class="bg-slate-900/50 p-4 rounded-xl flex-1">
+                        <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Level</div>
+                        <div id="final-level-val" class="text-2xl font-bold text-white leading-none">1</div>
+                    </div>
+                </div>
+                <button onclick="location.reload()" class="w-full bg-white text-slate-950 py-4 rounded-xl font-black text-lg hover:bg-amber-400 transform active:scale-95 transition-all">
+                    TRY AGAIN
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="game.js"></script>
+</body>
+</html>
