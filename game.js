@@ -183,6 +183,7 @@ const translations = {
         maxLevel: "Cấp Tối Đa",
         topScore: "Điểm Cao Nhất",
         startMission: "BẮT ĐẦU NHIỆM VỤ",
+        continueMission: "TIẾP TỤC NHIỆM VỤ",
         settings: "CÀI ĐẶT",
         controlHint: "CHẠM HOẶC CLICK ĐỂ DI CHUYỂN & BẮN"
     },
@@ -210,6 +211,7 @@ const translations = {
         maxLevel: "Max Level",
         topScore: "Top Score",
         startMission: "START MISSION",
+        continueMission: "CONTINUE MISSION",
         settings: "SETTINGS",
         controlHint: "TAP OR CLICK TO CONTROL & SHOOT"
     }
@@ -429,10 +431,10 @@ function prerender() {
                 // 2. Base Image (PNG)
                 c.drawImage(t.img, -w / 2, -h / 2, w, h);
 
-                // 3. Color Tinting (GPU source-atop)
+                // 3. Color Tinting (GPU source-atop) - 30% tint (70% PNG remains)
                 c.globalCompositeOperation = 'source-atop';
                 c.fillStyle = mainColor;
-                c.globalAlpha = 0.45; 
+                c.globalAlpha = 0.30; 
                 c.fillRect(-w/2, -h/2, w, h);
                 c.globalAlpha = 1.0;
                 c.globalCompositeOperation = 'source-over';
@@ -480,7 +482,7 @@ class DamageNumber {
         ctx.fillStyle = this.isCrit ? '#facc15' : '#fff';
         ctx.font = this.isCrit ? 'bold 20px sans-serif' : '16px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(this.amount, this.x, this.y);
+        ctx.fillText(formatNumber(this.amount), this.x, this.y);
         ctx.restore();
     }
 }
@@ -566,7 +568,7 @@ class Ally {
                     this.x,
                     this.y,
                     baseAngle + offsetAngle,
-                    playerBulletDmg * 0.5,
+                    playerBulletDmg * player.allyDamageRatio,
                     false,
                     false,
                     gameState.weaponTier,
@@ -642,13 +644,25 @@ class Player {
         this.shield = 0;
         this.tilt = 0;
         this.damageMultiplier = 1.0;
+        
+        // New Mechanics
+        this.immunityTimer = 0;
+        this.hasteTimer = 0;
+        this.damageReductionTimer = 0;
+        this.bossKillDamageBonus = 0;
+        this.allyDamageRatio = 0.20; // Task: Build start at 20%
     }
 
     takeDamage(amt) {
         // Task: Enemy damage scaling (1.6x per level)
         // Level starts at 1, so level 1 has no multiplier (1.6^0 = 1)
         const scale = Math.pow(1.6, gameState.level - 1);
-        const totalDmg = amt * scale;
+        let totalDmg = amt * scale;
+
+        // Task 6: Shield/Skill 30% damage reduction
+        if (this.damageReductionTimer > 0) {
+            totalDmg *= 0.7;
+        }
 
         // Task 5: Shield logic (250 + 10% max HP)
         if (this.shield > 0) {
@@ -688,6 +702,9 @@ class Player {
         if (this.slowTimer > 0) this.slowTimer -= dt;
         if (this.jammedTimer > 0) this.jammedTimer -= dt;
         if (this.fireRateDebuffTimer > 0) this.fireRateDebuffTimer -= dt;
+        if (this.immunityTimer > 0) this.immunityTimer -= dt;
+        if (this.hasteTimer > 0) this.hasteTimer -= dt;
+        if (this.damageReductionTimer > 0) this.damageReductionTimer -= dt;
 
         // Task: Debuff slows movement by 30% (curLerp * 0.7) for 2s
         let curLerp = (this.slowTimer > 0 || this.fireRateDebuffTimer > 0) ? this.lerp * 0.7 : this.lerp;
@@ -713,7 +730,10 @@ class Player {
             // Task: Cap fire rate at 1 volley per second (1000ms)
             // Anything beyond that is converted: +10% speed bonus = +3% damage
             let baseInterval = 222; // 4.5 shots/s
-            let targetInterval = baseInterval / (1 + levelBonus);
+            
+            // Task 3: 2s speed boost at boss start
+            let hasteMult = this.hasteTimer > 0 ? 2.0 : 1.0;
+            let targetInterval = baseInterval / (1 + levelBonus) / hasteMult;
             
             let finalInterval = targetInterval;
             let excessDamageBonus = 1.0;
@@ -721,7 +741,7 @@ class Player {
             const MAX_CAP_MS = 167;     // 6.0 shots/s
             
             // Limit scales from 4.5 at Level 1 to 6.0 at Level 10
-            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 6);
+            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 6) / hasteMult;
 
             if (targetInterval < currentCap) {
                 finalInterval = currentCap;
@@ -761,8 +781,8 @@ class Player {
 
         const spread = 0.09; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
-        // Reduced from 0.4 to 0.15 per boss | Base damage increased by 80% (40 -> 72)
-        let bulletDamage = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + gameState.bossCount * 0.15);
+        // Task 5: 8% damage bonus per boss killed, max 90%
+        let bulletDamage = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + this.bossKillDamageBonus);
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
         if (gameState.weaponTier === 2) bulletDamage *= 4.0;
         
@@ -1446,13 +1466,20 @@ function fireMissile() {
     }
 }
 
+function formatNumber(num) {
+    if (num >= 1000000000) return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'b';
+    if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
+    if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return Math.floor(num);
+}
+
 function updateUI() {
-    document.getElementById('score-val').innerText = Math.floor(gameState.score);
+    document.getElementById('score-val').innerText = formatNumber(gameState.score);
     document.getElementById('level-val').innerText = gameState.level;
     const nextBossEl = document.getElementById('next-boss-val');
     if (nextBossEl) {
         // Show the actual milestone score (e.g. 2000, 6000, etc.)
-        nextBossEl.innerText = Math.floor(gameState.nextBossScore);
+        nextBossEl.innerText = formatNumber(gameState.nextBossScore);
     }
 
     // Update HP Bar & Text
@@ -1465,7 +1492,7 @@ function updateUI() {
         else hpBar.classList.remove('bg-red-500');
     }
     if (hpText) {
-        hpText.innerText = `${Math.ceil(player.hp)}/${player.maxHp}`;
+        hpText.innerText = `${formatNumber(player.hp)}/${formatNumber(player.maxHp)}`;
     }
 
     if (gameState.level > bestLevel) {
@@ -1480,6 +1507,7 @@ function updateUI() {
 
 function gameOver() {
     gameState.isGameOver = true;
+    clearSave(); // Remove session when dead
     document.getElementById('final-score-val').innerText = gameState.score;
     document.getElementById('final-level-val').innerText = gameState.level;
     document.getElementById('game-over-screen').classList.remove('hidden');
@@ -1504,8 +1532,16 @@ function togglePause() {
  */
 let spawnTimer = 0;
 
+let saveTimer = 0;
 function update(dt) {
     if (gameState.isGameOver) return;
+
+    // Periodic Save (Every 2 seconds)
+    saveTimer += dt;
+    if (saveTimer > 2000) {
+        saveGame();
+        saveTimer = 0;
+    }
 
     // Update Difficulty Scaling
     gameState.difficulty = 1 + (gameState.score / 6000);
@@ -1585,6 +1621,14 @@ function update(dt) {
 
     if (!gameState.isBossFight && gameState.score >= gameState.nextBossScore) {
         gameState.isBossFight = true;
+
+        // Task 3: Boss fight start buffs
+        player.immunityTimer = 2000;
+        player.hasteTimer = 2000;
+        // Fire 5 bombs
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => fireMissile(), i * 150);
+        }
 
         // Buff Boss: 1 Shield + 2 Allies (if < 5)
         player.shield = Math.max(player.shield, 150 + player.maxHp * 0.1);
@@ -1736,6 +1780,22 @@ function update(dt) {
                 }
                 
                 gameState.isBossFight = false;
+                
+                // Task 4 & 5: Post-boss rewards
+                // Permanent HP increase (15% of defeated boss's max HP)
+                const hpBonus = entities.boss.maxHp * 0.15;
+                player.maxHp += hpBonus;
+                player.hp = Math.min(player.maxHp, player.hp + hpBonus); 
+
+                // Damage bonus scaling (+8% per boss, max 90%)
+                player.bossKillDamageBonus = Math.min(0.9, player.bossKillDamageBonus + 0.08);
+                
+                // Ally damage ratio scaling (+8% of player damage, max 90% total ratio)
+                player.allyDamageRatio = Math.min(0.9, player.allyDamageRatio + 0.08);
+
+                // Flat 15% damage multiplier upgrade for each boss win
+                player.damageMultiplier += 0.15;
+
                 entities.boss = null;
                 updateUI();
             } else {
@@ -1758,10 +1818,14 @@ function update(dt) {
             continue;
         }
 
-        if (distSq < 484) { // 22^2 = 484
-            if (eb.isDebuff) {
-                player.slowTimer = 2000; // 2s movement slow (30%)
-                if (eb.damage > 0) player.takeDamage(eb.damage);
+        // Task 2: Hitbox reduced 30% (22 -> 15.4, 15.4^2 = 237)
+        if (distSq < 237) { 
+            if (eb.isDebuff || eb.isBossSpeedDebuff) {
+                // Task 3: 2s immunity at boss start
+                if (player.immunityTimer <= 0) {
+                    player.slowTimer = 2000; // 2s movement slow (30%)
+                    if (eb.damage > 0) player.takeDamage(eb.damage);
+                }
                 entities.enemyBullets.splice(ebi, 1);
             } else if (eb.isDowngrade) {
                 let currentCount = player.level * 2 + 1;
@@ -1790,8 +1854,8 @@ function update(dt) {
         const dx = e.x - player.x;
         const dy = e.y - player.y;
 
-        // Collision with player (35^2 = 1225)
-        if (dx * dx + dy * dy < 1225) {
+        // Task 2: Hitachi hitbox reduced 30% (35 -> 24.5, 24.5^2 = 600)
+        if (dx * dx + dy * dy < 600) {
             const dmg = e.type === 'small' ? 70 : 150;
             player.takeDamage(dmg);
             e.hp = 0;
@@ -1837,6 +1901,8 @@ function update(dt) {
                     }
                 }
             } else if (p.type === 'H') {
+                // Task 1: Increase max HP by 8% and heal
+                player.maxHp *= 1.08;
                 // Scaling: 250 + 10% of max HP
                 const healAmt = 250 + player.maxHp * 0.1;
                 player.hp = Math.min(player.maxHp, player.hp + healAmt);
@@ -1886,7 +1952,9 @@ function update(dt) {
                     player.damageMultiplier += 0.15; // Reduced from 0.8
                 }
             } else if (p.type === 'S') {
-                player.shield = 250 + player.maxHp * 0.1;
+                // Task 6: Shield buff 2s resistance + 5% HP power
+                player.shield = 250 + player.maxHp * 0.15; // Increased power (+5%)
+                player.damageReductionTimer = 2000; // 2s resistance
             }
             entities.powerUps.splice(pi, 1); updateUI();
         }
@@ -2048,13 +2116,26 @@ function setupEventListeners() {
     window.addEventListener('resize', resize);
     resize();
 
-    // Start Button Logic
+    // Start Button Logic (New Game)
     const startBtn = document.getElementById('start-btn');
     if (startBtn) {
         startBtn.addEventListener('click', () => {
+            clearSave(); // Start fresh
             initAudio();
             gameState.isStarted = true;
             document.getElementById('start-screen').classList.add('hidden');
+        });
+    }
+
+    // Continue Button Logic
+    const continueBtn = document.getElementById('continue-btn');
+    if (continueBtn) {
+        continueBtn.addEventListener('click', () => {
+            if (loadGame()) {
+                initAudio();
+                gameState.isStarted = true;
+                document.getElementById('start-screen').classList.add('hidden');
+            }
         });
     }
 
@@ -2228,11 +2309,84 @@ function setupEventListeners() {
     });
 }
 
+/**
+ * PERSISTENCE
+ */
+function saveGame() {
+    if (!gameState.isStarted || gameState.isGameOver) return;
+    
+    const saveData = {
+        gameState: {
+            score: gameState.score,
+            level: gameState.level,
+            weaponTier: gameState.weaponTier,
+            nextBossScore: gameState.nextBossScore,
+            bossCount: gameState.bossCount,
+            accumulatedBossHp: gameState.accumulatedBossHp,
+            lastLevel: gameState.lastLevel
+        },
+        player: {
+            hp: player.hp,
+            maxHp: player.maxHp,
+            level: player.level,
+            damageMultiplier: player.damageMultiplier,
+            bossKillDamageBonus: player.bossKillDamageBonus
+        },
+        allyCount: entities.allies.length
+    };
+    localStorage.setItem('space_shooter_save_game', JSON.stringify(saveData));
+}
+
+function loadGame() {
+    const raw = localStorage.getItem('space_shooter_save_game');
+    if (!raw) return false;
+    
+    try {
+        const data = JSON.parse(raw);
+        
+        // Restore Game State
+        Object.assign(gameState, data.gameState);
+        
+        // Restore Player
+        player.hp = data.player.hp;
+        player.maxHp = data.player.maxHp;
+        player.level = data.player.level;
+        player.damageMultiplier = data.player.damageMultiplier;
+        player.bossKillDamageBonus = data.player.bossKillDamageBonus;
+        
+        // Restore Allies
+        entities.allies = [];
+        for (let i = 0; i < (data.allyCount || 0); i++) {
+            entities.allies.push(new Ally(player, i));
+        }
+        
+        updateUI();
+        return true;
+    } catch (e) {
+        console.error("Failed to load game", e);
+        return false;
+    }
+}
+
+function clearSave() {
+    localStorage.removeItem('space_shooter_save_game');
+}
+
 function init() {
     setupEventListeners();
     applyLanguage();
     prerender(); // CPU-to-GPU Offloading: Generate textures once
     updateUI(); // Fix initial HP display
+
+    // Check for saved session
+    const continueBtn = document.getElementById('continue-btn');
+    if (continueBtn) {
+        if (localStorage.getItem('space_shooter_save_game')) {
+            continueBtn.classList.remove('hidden');
+        } else {
+            continueBtn.classList.add('hidden');
+        }
+    }
 
     // Display Best Scores
     const bs = document.getElementById('best-score');
