@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-defender-v23';
+const CACHE_NAME = 'space-defender-v24';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

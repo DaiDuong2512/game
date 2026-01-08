@@ -83,51 +83,53 @@
         </div>
 
         <!-- PAUSE SCREEN -->
-        <div id="pause-screen" class="hidden absolute inset-0 z-40 bg-slate-950/60 backdrop-blur-md items-center justify-center p-6 flex-col gap-6">
-            <div class="glass-morphism p-6 rounded-3xl border border-white/10 w-full max-w-xs">
-                <div class="text-[10px] font-bold text-amber-400 uppercase tracking-[0.2em] mb-4 text-center">Unit Status</div>
-                <div class="space-y-3">
-                    <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase">Speed</span>
-                        <span id="stat-speed" class="text-sm font-black text-white italic">4.5/s</span>
+        <div id="pause-screen" class="hidden absolute inset-0 z-40 bg-slate-950/40 backdrop-blur-sm items-center justify-center p-4 flex-col gap-4">
+            <div class="glass-morphism p-5 rounded-2xl border border-white/5 w-full max-w-[280px] shadow-2xl">
+                <div class="text-[10px] font-black text-amber-400 uppercase tracking-[0.2em] mb-4 text-center opacity-80 italic">MISSION PAUSED</div>
+                
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-white/5 p-2 rounded-xl border border-white/5 flex flex-col items-center">
+                        <span class="text-[7px] font-bold text-slate-500 uppercase">Speed</span>
+                        <span id="stat-speed" class="text-xs font-black text-white italic">4.5/s</span>
                     </div>
-                    <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase">Power</span>
-                        <span id="stat-damage" class="text-sm font-black text-white italic">1.0x</span>
+                    <div class="bg-white/5 p-2 rounded-xl border border-white/5 flex flex-col items-center">
+                        <span class="text-[7px] font-bold text-slate-500 uppercase">Power</span>
+                        <span id="stat-damage" class="text-xs font-black text-white italic">1.0x</span>
                     </div>
-                    <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase">Ally Support</span>
-                        <span id="stat-ally" class="text-sm font-black text-white italic">20%</span>
+                    <div class="bg-white/5 p-2 rounded-xl border border-white/5 flex flex-col items-center">
+                        <span class="text-[7px] font-bold text-slate-500 uppercase">Enemy</span>
+                        <span id="stat-enemy-dmg" class="text-xs font-black text-red-500 italic">0</span>
                     </div>
-                    <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase">Protection</span>
-                        <span id="stat-def" class="text-sm font-black text-cyan-400 italic">0%</span>
+                    <div class="bg-white/5 p-2 rounded-xl border border-white/5 flex flex-col items-center">
+                        <span class="text-[7px] font-bold text-slate-500 uppercase">Protection</span>
+                        <span id="stat-def" class="text-xs font-black text-cyan-400 italic">0%</span>
                     </div>
-                    <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase">Enemy Power</span>
-                        <span id="stat-enemy-dmg" class="text-sm font-black text-red-500 italic">0</span>
+                </div>
+
+                <div class="mt-2 flex justify-between items-center bg-white/5 p-2 rounded-xl border border-white/5">
+                    <div class="flex flex-col">
+                        <span class="text-[6px] font-bold text-slate-500 uppercase">Ally Support</span>
+                        <span id="stat-ally" class="text-[10px] font-black text-emerald-400 italic">20%</span>
                     </div>
-                    <div class="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
-                        <span class="text-[10px] font-bold text-slate-400 uppercase">Rays</span>
-                        <span id="stat-rays" class="text-sm font-black text-amber-400 italic">1</span>
+                    <div class="flex flex-col items-end">
+                        <span class="text-[6px] font-bold text-slate-500 uppercase">Weapon Rays</span>
+                        <span id="stat-rays" class="text-[10px] font-black text-amber-400 italic">1</span>
                     </div>
                 </div>
 
                 <!-- PASSIVE BUFFS LIST -->
-                <div class="mt-4 pt-4 border-t border-white/5">
-                    <div class="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Active Perks</div>
-                    <div id="passive-list" class="flex flex-wrap gap-1">
+                <div class="mt-3 pt-3 border-t border-white/5">
+                    <div id="passive-list" class="flex flex-wrap gap-1 justify-center">
                         <!-- Populated via JS -->
                     </div>
                 </div>
-            </div>
 
-            <div class="glass-morphism p-10 rounded-3xl border border-white/10 text-center flex flex-col items-center gap-6 w-full max-w-sm">
-                <h2 data-i18n="missionPaused" class="text-3xl font-black text-white italic tracking-tighter">MISSION PAUSED</h2>
-                <div data-i18n="pauseHint" class="text-slate-400 text-xs uppercase tracking-widest">Space or Right-Click to Resume</div>
-                <button onclick="togglePause()" data-i18n="resume" class="w-full bg-amber-400 text-slate-950 py-4 rounded-xl font-black text-lg hover:scale-[1.02] active:scale-95 transition-all shadow-xl">
-                    RESUME
-                </button>
+                <div class="mt-5 flex flex-col gap-2">
+                    <button onclick="togglePause()" class="w-full bg-amber-400 text-slate-950 py-3 rounded-xl font-black text-sm hover:scale-[1.02] active:scale-95 transition-all shadow-lg italic">
+                        RESUME MISSION
+                    </button>
+                    <div class="text-[7px] text-slate-500 text-center uppercase tracking-widest opacity-50 italic">Space or Right-Click to Resume</div>
+                </div>
             </div>
         </div>
 

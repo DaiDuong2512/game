@@ -247,6 +247,20 @@ const TEXTURES = {};
 
 function prerender() {
     console.log("Starting GPU optimization (prerendering textures)...");
+    
+    // Safety check for images
+    const requiredImages = ['enemySmall', 'enemyMedium'];
+    requiredImages.forEach(key => {
+        if (!images[key] || !images[key].complete || images[key].naturalWidth === 0) {
+            console.warn(`Asset ${key} not fully loaded, using fallback for prerender`);
+            const fallback = document.createElement('canvas');
+            fallback.width = 64; fallback.height = 64;
+            const fctx = fallback.getContext('2d');
+            fctx.fillStyle = key === 'enemySmall' ? '#ef4444' : '#991b1b';
+            fctx.beginPath(); fctx.arc(32, 32, 20, 0, Math.PI*2); fctx.fill();
+            images[key] = fallback;
+        }
+    });
 
     // --- Prerender Bullets (GPU Texture Batching) ---
     const bulletTypes = [
@@ -2216,23 +2230,26 @@ function preload() {
 
     const checkComplete = () => {
         loaded++;
+        console.log(`Asset loaded: ${loaded}/${totalImages}`);
         if (loadingBar) {
             loadingBar.style.width = (loaded / totalImages * 100) + '%';
         }
         if (loaded === totalImages) {
+            console.log("All assets loaded. Initializing...");
             setTimeout(() => {
                 if (loadingContainer) loadingContainer.classList.add('hidden');
+                init();
             }, 500);
-            init();
         }
     };
 
     for (const key in ASSETS) {
         const img = new Image();
+        img.crossOrigin = "anonymous"; // Fix potential canvas tainting
         img.src = ASSETS[key];
         img.onload = checkComplete;
-        img.onerror = () => {
-            console.warn("Retrying asset: " + key);
+        img.onerror = (e) => {
+            console.error("Failed to load: " + key, ASSETS[key]);
             const canvasFallback = document.createElement('canvas');
             canvasFallback.width = 100; canvasFallback.height = 100;
             images[key] = canvasFallback;
