@@ -513,7 +513,8 @@ class Ally {
         this.x = parent.x;
         this.y = parent.y;
         this.fireTimer = 0;
-        this.maxHp = parent.maxHp * 0.3;
+        // Task: Increase Ally base HP to 60% of player (was 30%)
+        this.maxHp = parent.maxHp * 0.6;
         this.hp = this.maxHp;
         this.target = null;
     }
@@ -1713,6 +1714,13 @@ function update(dt) {
     if (gameState.level > gameState.lastLevel) {
         player.maxHp += 400; // Increased scaling
         player.hp = Math.min(player.maxHp, player.hp + 500); // Increased heal
+        
+        // Task: Sync allies with player growth
+        entities.allies.forEach(ally => {
+            ally.maxHp += 200; // Allies get 50% of player growth
+            ally.hp = Math.min(ally.maxHp, ally.hp + 250);
+        });
+
         gameState.lastLevel = gameState.level;
         playSound('levelUp');
         updateUI();
@@ -1766,17 +1774,24 @@ function update(dt) {
     }
 
     spawnTimer += dt;
-    // Faster spawn rate after 150 points
     let spawnBase = 2500;
-    if (gameState.score >= 150) {
-        // Increase speed by 30% for small and 20% for medium (averaging ~25% or applying most aggressive)
-        spawnBase = 1800;
-    }
+    if (gameState.score >= 150) spawnBase = 1800;
 
-    if (!gameState.isBossFight && spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
-        // Redo spawn chance: reduce spawn frequency by another 15%
-        if (Math.random() < 0.85) {
-            spawnEnemy();
+    // Task: Dynamic mob limits
+    // Normal mode: Random cap 3-6 | Boss fight: Max 6 Medium units
+    let mobCap = gameState.isBossFight ? 6 : (3 + (Math.floor(gameState.score / 800) % 4));
+    
+    if (spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
+        if (entities.enemies.length < mobCap) {
+            if (gameState.isBossFight) {
+                // Occasional medium minion reinforcement during boss
+                if (Math.random() < 0.4) {
+                    const x = 50 + Math.random() * (canvas.width - 100);
+                    entities.enemies.push(new Enemy(x, -50, 'medium'));
+                }
+            } else if (Math.random() < 0.85) {
+                spawnEnemy();
+            }
         }
         spawnTimer = 0;
     }
@@ -1784,12 +1799,15 @@ function update(dt) {
     if (!gameState.isBossFight && gameState.score >= gameState.nextBossScore) {
         gameState.isBossFight = true;
 
-        // Task 3: Boss fight start buffs
-        player.immunityTimer = 2000;
-        player.hasteTimer = 2000;
-        // Fire 5 bombs
+        // Task 3: Boss fight start buffs (Increased to 4s)
+        player.immunityTimer = 4000;
+        player.hasteTimer = 4000;
+        // Fire 5 bombs rapid fire (no cooldown)
         for (let i = 0; i < 5; i++) {
-            setTimeout(() => fireMissile(), i * 150);
+            setTimeout(() => {
+                gameState.boomCharges = 1;
+                fireMissile();
+            }, i * 60);
         }
 
         // Buff Boss: 1 Shield + 2 Allies (if < 5)
@@ -1801,8 +1819,8 @@ function update(dt) {
             }
         }
 
-        // Task: Spawn 3 + Level medium minions along with boss
-        const minionCount = 3 + gameState.level;
+        // Task: Spawn 3 + Level medium minions along with boss (Limited to 5-6)
+        const minionCount = Math.min(6, 3 + gameState.level);
         for (let i = 0; i < minionCount; i++) {
             const x = 50 + Math.random() * (canvas.width - 100);
             entities.enemies.push(new Enemy(x, -50 - (Math.random() * 150), 'medium'));
@@ -2069,20 +2087,21 @@ function update(dt) {
                 const healAmt = 250 + player.maxHp * 0.1;
                 player.hp = Math.min(player.maxHp, player.hp + healAmt);
                 for (let ai = 0; ai < entities.allies.length; ai++) {
-                    entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + healAmt * 0.3);
+                    // Task: Increase Ally heal logic (70% of healAmt, was 30%)
+                    entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + healAmt * 0.7);
                 }
             } else if (p.type === 'A') {
                 if (entities.allies.length < 6) {
                     entities.allies.push(new Ally(player, entities.allies.length));
                 } else {
-                    // Task: If already 6 allies, upgrade all allies HP by 3%
+                    // Task: If already 6 allies, upgrade all allies HP by 10% (was 3%)
                     entities.allies.forEach(ally => {
-                        ally.maxHp *= 1.03;
-                        ally.hp *= 1.03; 
+                        ally.maxHp *= 1.10;
+                        ally.hp *= 1.10; 
                     });
-                    // Also heal a bit
+                    // Also heal a bit more
                     for (let ai = 0; ai < entities.allies.length; ai++) {
-                        entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + 100);
+                        entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + 300);
                     }
                 }
             } else if (p.type === 'B') {
