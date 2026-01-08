@@ -380,12 +380,20 @@ class Ally {
         const allyFireRate = playerFireRate * 2; // 50% speed = double fire interval
 
         if (this.fireTimer > allyFireRate) {
-            const playerBulletDmg = player.level <= 5 ? 25 : 25 + (player.level - 5) * 15;
+            const playerBulletDmg = (player.level <= 5 ? 40 : 40 + (player.level - 5) * 20) * (1 + gameState.bossCount * 0.4);
 
             // Task: Allies upgrade bullet count (rays) based on Player's weapon tier
             const allyBulletCount = gameState.weaponTier + 1; // Tier 0 (Yellow): 1 ray, 1 (Green): 2 rays, 2 (Blue): 3 rays
             const allySpread = 0.05;
-            const baseAngle = -Math.PI / 2 + (this.index % 2 === 0 ? -0.1 : 0.1) * (colIndex + 1);
+            
+            let baseAngle;
+            if (entities.boss) {
+                // Auto-target boss: Allies focus fire on the boss
+                baseAngle = Math.atan2(entities.boss.y - this.y, entities.boss.x - this.x);
+            } else {
+                // Straighter angle when no boss is present (reduced from 0.1 to 0.05)
+                baseAngle = -Math.PI / 2 + (this.index % 2 === 0 ? -0.05 : 0.05) * (colIndex + 1);
+            }
 
             for (let i = 0; i < allyBulletCount; i++) {
                 const offsetAngle = allyBulletCount > 1 ? (i - (allyBulletCount - 1) / 2) * allySpread : 0;
@@ -461,10 +469,11 @@ class Player {
         this.level = 0; // Task 3: Start with 1 bullet (0*2+1)
         this.slowTimer = 0;
         this.jammedTimer = 0;
-        this.hp = 600;
-        this.maxHp = 600;
+        this.hp = 1000;
+        this.maxHp = 1000;
         this.shield = 0;
         this.tilt = 0;
+        this.damageMultiplier = 1.0;
     }
 
     takeDamage(amt) {
@@ -558,9 +567,12 @@ class Player {
 
         const spread = 0.09; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
-        let bulletDamage = this.level <= 5 ? 25 : 25 + (this.level - 5) * 15;
+        let bulletDamage = (this.level <= 5 ? 40 : 40 + (this.level - 5) * 20) * (1 + gameState.bossCount * 0.4);
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
         if (gameState.weaponTier === 2) bulletDamage *= 4.0;
+        
+        // Apply PowerUp multipliers
+        bulletDamage *= this.damageMultiplier;
 
         for (let i = 0; i < count; i++) {
             const step = count > 1 ? i / (count - 1) : 0.5;
@@ -1000,6 +1012,21 @@ class PowerUp {
 
     draw() {
         const tex = TEXTURES['powerup_' + this.type];
+        
+        // Draw a distinct circular boundary to distinguish from bullets
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 25, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 3]); // Dashed line for a "collectible" feel
+        ctx.stroke();
+        
+        // Outer glow
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'white';
+        ctx.restore();
+
         if (tex) {
             // GPU: drawImage is much faster than path calculations + shadowBlur
             ctx.drawImage(tex, Math.floor(this.x - 40), Math.floor(this.y - 40));
@@ -1102,6 +1129,8 @@ function fireMissile() {
 function updateUI() {
     document.getElementById('score-val').innerText = gameState.score;
     document.getElementById('level-val').innerText = gameState.level;
+    const nextBossEl = document.getElementById('next-boss-val');
+    if (nextBossEl) nextBossEl.innerText = gameState.nextBossScore;
 
     // Update HP Bar & Text
     const hpBar = document.getElementById('hp-bar-inner');
@@ -1315,10 +1344,18 @@ function update(dt) {
         if (entity.hp <= 0) {
             if (entity === entities.boss) {
                 createExplosion(entities.boss.x, entities.boss.y, true);
-                gameState.score += 2000;
+                gameState.score += 6000; // Increase score significantly to trigger an immediate level up
                 gameState.bossCount++;
                 gameState.nextBossScore = gameState.score + 3000 + (gameState.bossCount * 1000);
-                if (Math.random() < 0.04) entities.powerUps.push(new PowerUp(entities.boss.x, entities.boss.y, 'U'));
+                
+                // Drop system: Minimum 1 buff, potentially more if lucky
+                const numDrops = Math.floor(Math.random() * 3) + 1; // 1 to 3 drops
+                const dropTypes = ['U', 'W', 'H', 'A', 'B', 'S'];
+                for (let i = 0; i < numDrops; i++) {
+                    const type = i === 0 ? 'U' : dropTypes[Math.floor(Math.random() * dropTypes.length)];
+                    entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops-1)/2) * 40, entities.boss.y, type));
+                }
+                
                 gameState.isBossFight = false;
                 entities.boss = null;
                 updateUI();
@@ -1351,9 +1388,11 @@ function update(dt) {
                 let currentCount = player.level * 2 + 1;
                 if (currentCount > 3) {
                     player.level -= 1.5;
+                    player.damageMultiplier = Math.max(1.0, player.damageMultiplier * 0.7); // Reduce damage when level is lost
                     if (player.level < 0) player.level = 0;
                 } else if (gameState.weaponTier > 0) {
                     gameState.weaponTier--;
+                    player.damageMultiplier = Math.max(1.0, player.damageMultiplier * 0.7); // Also reduce on tier loss
                     player.level = 2; // Reset
                 }
 
@@ -1399,6 +1438,7 @@ function update(dt) {
             playSound('powerup');
             if (p.type === 'W') {
                 player.level += 0.5;
+                player.damageMultiplier *= 1.3; // Upgrade damage by 30% for each bullet upgrade buff
             } else if (p.type === 'H') {
                 const healAmt = 200;
                 player.hp = Math.min(player.maxHp, player.hp + healAmt);
@@ -1416,6 +1456,11 @@ function update(dt) {
                 if (gameState.weaponTier < 2) {
                     gameState.weaponTier++;
                     player.level = 0;
+                } else if (player.level < 2) {
+                    player.level = 2; // Jump to max rays for current tier
+                } else {
+                    // Already at max weapon tier and max rays: increase damage instead
+                    player.damageMultiplier += 0.8; // Strong damage increase when maxed
                 }
             } else if (p.type === 'S') {
                 player.shield = 250 + player.maxHp * 0.1;
