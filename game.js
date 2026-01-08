@@ -99,8 +99,9 @@ class Ally {
         const tx = this.parent.x + offsetX;
         const ty = this.parent.y + offsetY;
 
-        this.x += (tx - this.x) * 0.1;
-        this.y += (ty - this.y) * 0.1;
+        const lerpFactor = 1 - Math.pow(1 - 0.1, dt / 16.6);
+        this.x += (tx - this.x) * lerpFactor;
+        this.y += (ty - this.y) * lerpFactor;
 
         // Scale HP with player max HP
         const targetMaxHp = this.parent.maxHp * 0.3;
@@ -323,9 +324,10 @@ class Bullet {
         this.trail = [];
     }
 
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
+    update(dt) {
+        const factor = dt / 16.6;
+        this.x += this.vx * factor;
+        this.y += this.vy * factor;
     }
 
     draw() {
@@ -421,6 +423,7 @@ class Enemy {
 
     update(dt) {
         this.entryTimer += dt;
+        const timeFactor = dt / 16.6;
 
         // Stop dash if duration ends OR reaches the target 1/8 position
         if (this.entryTimer < this.dashDuration && this.y < this.dashTargetY) {
@@ -428,10 +431,10 @@ class Enemy {
             const progress = this.entryTimer / this.dashDuration;
             this.y = this.startY + (this.dashTargetY - this.startY) * progress;
         } else {
-            this.y += this.speed;
+            this.y += this.speed * timeFactor;
         }
 
-        this.x += this.vx;
+        this.x += this.vx * timeFactor;
         if (this.type === 'medium') {
             if (this.x < 100 || this.x > canvas.width - 100) this.vx *= -1;
         }
@@ -517,6 +520,7 @@ class Missile {
     }
 
     update(dt) {
+        const timeFactor = dt / 16.6;
         if (this.target && (entities.enemies.includes(this.target) || this.target === entities.boss)) {
             const angleTo = Math.atan2(this.target.y - this.y, this.target.x - this.x);
             let diff = angleTo - this.angle;
@@ -530,8 +534,8 @@ class Missile {
             this.findTarget();
         }
 
-        this.x += Math.cos(this.angle) * this.speed;
-        this.y += Math.sin(this.angle) * this.speed;
+        this.x += Math.cos(this.angle) * this.speed * timeFactor;
+        this.y += Math.sin(this.angle) * this.speed * timeFactor;
 
         if (this.target) {
             if (Math.hypot(this.target.x - this.x, this.target.y - this.y) < 40) {
@@ -617,7 +621,8 @@ class Boss {
     }
 
     update(dt) {
-        if (this.y < this.targetY) this.y += 0.45; // Slower descent (30% of 1.5)
+        const timeFactor = dt / 16.6;
+        if (this.y < this.targetY) this.y += 0.45 * timeFactor; // Slower descent (30% of 1.5)
         else {
             this.moveTimer += dt;
             // Slower horizontal movement oscillation
@@ -659,7 +664,7 @@ class Boss {
 
     draw() {
         // Boss Health Bar UI (y moved to 70 to avoid HUD)
-        const bw = 400;
+        const bw = Math.min(canvas.width * 0.85, 400);
         const barY = 70;
         ctx.save();
 
@@ -674,7 +679,7 @@ class Boss {
         ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
         ctx.fillRect(canvas.width / 2 - bw / 2, barY, bw, 12);
         const hpWidth = (this.hp / this.maxHp) * bw;
-        const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+        const grad = ctx.createLinearGradient(canvas.width / 2 - bw / 2, 0, canvas.width / 2 + bw / 2, 0);
         if (this.isSuper) {
             grad.addColorStop(0, '#d946ef');
             grad.addColorStop(1, '#701a75');
@@ -701,23 +706,104 @@ class PowerUp {
         this.x = x; this.y = y; this.radius = 20;
         this.type = type; // 'W', 'H', 'A', 'B', 'U', 'S' (Shield)
     }
-    update() { this.y += 2.2; }
+    update(dt) { this.y += 2.2 * (dt / 16.6); }
+
+    drawIcon(color) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(0.8, 0.8);
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = 'rgba(255,255,255,0.5)';
+
+        switch (this.type) {
+            case 'W': // Weapon - Triple Bullet icon
+                for (let i = -1; i <= 1; i++) {
+                    ctx.beginPath();
+                    ctx.roundRect(i * 6 - 2, -8, 4, 16, 2);
+                    ctx.fill();
+                }
+                break;
+            case 'H': // Health - Heart
+                ctx.beginPath();
+                ctx.moveTo(0, 8);
+                ctx.bezierCurveTo(-10, 0, -10, -12, 0, -6);
+                ctx.bezierCurveTo(10, -12, 10, 0, 0, 8);
+                ctx.fill();
+                break;
+            case 'A': // Ally - Star
+                ctx.beginPath();
+                for (let i = 0; i < 5; i++) {
+                    ctx.lineTo(Math.cos((18 + i * 72) / 180 * Math.PI) * 10,
+                        Math.sin((18 + i * 72) / 180 * Math.PI) * 10);
+                    ctx.lineTo(Math.cos((54 + i * 72) / 180 * Math.PI) * 5,
+                        Math.sin((54 + i * 72) / 180 * Math.PI) * 5);
+                }
+                ctx.closePath();
+                ctx.fill();
+                break;
+            case 'B': // Boost/Boom - Flame
+                ctx.beginPath();
+                ctx.moveTo(0, 10);
+                ctx.quadraticCurveTo(-8, 5, -5, -2);
+                ctx.quadraticCurveTo(-10, -5, 0, -12);
+                ctx.quadraticCurveTo(10, -5, 5, -2);
+                ctx.quadraticCurveTo(8, 5, 0, 10);
+                ctx.fill();
+                break;
+            case 'U': // Upgrade - Lightning
+                ctx.beginPath();
+                ctx.moveTo(2, -10);
+                ctx.lineTo(-6, 2);
+                ctx.lineTo(0, 2);
+                ctx.lineTo(-2, 10);
+                ctx.lineTo(6, -2);
+                ctx.lineTo(0, -2);
+                ctx.closePath();
+                ctx.fill();
+                break;
+            case 'S': // Shield
+                ctx.beginPath();
+                ctx.moveTo(0, -10);
+                ctx.lineTo(8, -6);
+                ctx.lineTo(8, 2);
+                ctx.quadraticCurveTo(8, 8, 0, 11);
+                ctx.quadraticCurveTo(-8, 8, -8, 2);
+                ctx.lineTo(-8, -6);
+                ctx.closePath();
+                ctx.fill();
+                break;
+        }
+        ctx.restore();
+    }
+
     draw() {
+        ctx.save();
         let color = '#22c55e';
-        let label = 'W';
-        if (this.type === 'H') { color = '#f43f5e'; label = '❤'; }
-        if (this.type === 'A') { color = '#3b82f6'; label = '★'; }
-        if (this.type === 'B') { color = '#f97316'; label = '🔥'; }
-        if (this.type === 'U') { color = '#a855f7'; label = '⚡'; }
-        if (this.type === 'S') { color = '#06b6d4'; label = '🛡'; }
+        if (this.type === 'H') color = '#f43f5e';
+        if (this.type === 'A') color = '#3b82f6';
+        if (this.type === 'B') color = '#f97316';
+        if (this.type === 'U') color = '#a855f7';
+        if (this.type === 'S') color = '#06b6d4';
+
+        // Outer Glow
+        ctx.shadowBlur = 15;
         ctx.shadowColor = color;
         ctx.fillStyle = color;
-        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
 
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, this.x, this.y + 8);
+        // Sphere with gradient
+        const grad = ctx.createRadialGradient(this.x - 5, this.y - 5, 2, this.x, this.y, this.radius);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = grad;
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Overlay Icon
+        this.drawIcon(color);
+
         ctx.restore();
     }
 }
@@ -837,8 +923,9 @@ function update(dt) {
         updateUI();
     }
 
-    gameState.bgY += 1.2;
-    if (gameState.shake > 0) gameState.shake *= 0.88;
+    const timeFactor = dt / 16.6;
+    gameState.bgY += 1.2 * timeFactor;
+    if (gameState.shake > 0) gameState.shake *= Math.pow(0.88, timeFactor);
 
     player.update(dt);
 
@@ -885,12 +972,12 @@ function update(dt) {
     }
 
     // Entities Updates
-    entities.bullets.forEach(e => e.update());
-    entities.enemyBullets.forEach(e => e.update());
+    entities.bullets.forEach(e => e.update(dt));
+    entities.enemyBullets.forEach(e => e.update(dt));
     entities.enemies.forEach(e => e.update(dt));
     entities.missiles.forEach(e => e.update(dt));
     entities.explosions.forEach(e => e.update(dt));
-    entities.powerUps.forEach(e => e.update());
+    entities.powerUps.forEach(e => e.update(dt));
     entities.allies.forEach(e => e.update(dt));
     if (entities.boss) entities.boss.update(dt);
 
@@ -1055,12 +1142,8 @@ function draw() {
 
 function gameLoop(now) {
     let dt = now - gameState.lastFrameTime;
+    if (dt > 100) dt = 16.6; // Cap to avoid jumps
     gameState.lastFrameTime = now;
-
-    // Slow down game speed for mobile (60%)
-    if (gameState.isMobile) {
-        dt *= 0.6;
-    }
 
     if (gameState.isStarted && !gameState.isPaused) {
         update(dt);
