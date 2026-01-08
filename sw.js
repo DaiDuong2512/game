@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-defender-v24';
+const CACHE_NAME = 'space-defender-v25';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -47,3 +47,4 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
