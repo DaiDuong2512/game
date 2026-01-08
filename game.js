@@ -1343,16 +1343,20 @@ function update(dt) {
 
         if (entity.hp <= 0) {
             if (entity === entities.boss) {
+                const isSuper = entities.boss.isSuper;
                 createExplosion(entities.boss.x, entities.boss.y, true);
                 gameState.score += 6000; // Increase score significantly to trigger an immediate level up
                 gameState.bossCount++;
                 gameState.nextBossScore = gameState.score + 3000 + (gameState.bossCount * 1000);
                 
                 // Drop system: Minimum 1 buff, potentially more if lucky
-                const numDrops = Math.floor(Math.random() * 3) + 1; // 1 to 3 drops
-                const dropTypes = ['U', 'W', 'H', 'A', 'B', 'S'];
+                const numDrops = isSuper ? 3 : (Math.floor(Math.random() * 3) + 1); // Super Boss drops more
+                const dropTypes = ['W', 'H', 'A', 'B', 'S'];
+                const uChance = isSuper ? 0.30 : 0.04;
+
                 for (let i = 0; i < numDrops; i++) {
-                    const type = i === 0 ? 'U' : dropTypes[Math.floor(Math.random() * dropTypes.length)];
+                    // Chance for 'U' (Weapon Upgrade) based on boss type, otherwise random other buff
+                    const type = Math.random() < uChance ? 'U' : dropTypes[Math.floor(Math.random() * dropTypes.length)];
                     entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops-1)/2) * 40, entities.boss.y, type));
                 }
                 
