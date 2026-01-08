@@ -146,7 +146,8 @@ const gameState = {
     lastLevel: 1,
 
     // Weapon Tiers: 0 (Yellow), 1 (Green), 2 (Blue)
-    weaponTier: 0
+    weaponTier: 0,
+    boomDamageMultiplier: 1.1
 };
 
 const entities = {
@@ -404,7 +405,9 @@ class Ally {
                     playerBulletDmg * 0.5,
                     false,
                     false,
-                    gameState.weaponTier
+                    gameState.weaponTier,
+                    false,
+                    true
                 );
                 b.radius = 1.6; // Significantly smaller than player (4.0)
                 b.isLong = true;
@@ -616,7 +619,7 @@ class Player {
 }
 
 class Bullet {
-    constructor(x, y, angle, damage, isEnemy = false, isDebuff = false, tier = 0, isDowngrade = false) {
+    constructor(x, y, angle, damage, isEnemy = false, isDebuff = false, tier = 0, isDowngrade = false, isAlly = false) {
         this.x = x;
         this.y = y;
         this.vx = Math.cos(angle) * (isEnemy ? 5 : 9);
@@ -625,6 +628,7 @@ class Bullet {
         this.isEnemy = isEnemy;
         this.isDebuff = isDebuff;
         this.isDowngrade = isDowngrade;
+        this.isAlly = isAlly;
         this.tier = tier; // 0: Yellow, 1: Green, 2: Blue
         this.radius = isDebuff || isDowngrade ? 10 : 4;
         this.trail = [];
@@ -729,17 +733,17 @@ class Enemy {
 
         this.fireTimer += dt;
         let levelFireBonus = (gameState.level - 1) * 0.13; // +3% from before (0.1 -> 0.13)
-        const baseFireRate = 5000 / (1 + (gameState.difficulty - 1) * 0.3); // base 2500 -> 5000 (50% slower)
-        let fireRate = Math.max(800, baseFireRate / (1 + levelFireBonus)); // min 600 -> 800
+        const baseFireRate = 4000 / (1 + (gameState.difficulty - 1) * 0.3); // Increased 20% speed (5000 * 0.8 = 4000)
+        let fireRate = Math.max(640, baseFireRate / (1 + levelFireBonus)); // min 800 * 0.8 = 640
 
         if (this.bulletCount > 1) {
             fireRate *= 1.8;
         }
 
         if (this.fireTimer > fireRate) {
-            // Damage scaling: base 80 -> 104 (+30%) then increased by 1.6x after each level
+            // Damage scaling: base 80 -> 156 (+50% increase from previous 104) then increased by 1.6x after each level
             const levelDmgFactor = Math.pow(1.6, gameState.level - 1);
-            const bulletDmg = 80 * 1.3 * levelDmgFactor;
+            const bulletDmg = 80 * 1.3 * 1.5 * levelDmgFactor;
 
             if (this.bulletCount > 1) {
                 const spread = 0.75;
@@ -762,6 +766,10 @@ class Enemy {
         // Task 4: Shield 90% only during entry (Ends at 0.8s OR when reaching 1/8 screen height)
         let reduction = 0;
         if (this.entryTimer < 800 && this.y < canvas.height / 8) reduction = 0.9;
+        
+        // Medium enemies get 30% damage reduction when boss is present
+        if (entities.boss && this.type === 'medium') reduction = Math.max(reduction, 0.3);
+
         this.hp -= amt * (1 - reduction);
     }
 
@@ -784,7 +792,7 @@ class Enemy {
 }
 
 class Missile {
-    constructor(x, y, initialTarget = null) {
+    constructor(x, y, initialTarget = null, isAlly = false) {
         this.x = x;
         this.y = y;
         this.speed = 7.2; // 20% slower than player bullet (9 * 0.8 = 7.2)
@@ -794,6 +802,7 @@ class Missile {
         this.width = 45;
         this.height = 45;
         this.angle = -Math.PI / 2;
+        this.isAlly = isAlly;
         if (!this.target) this.findTarget();
     }
 
@@ -842,8 +851,8 @@ class Missile {
 
     hit(target) {
         const pLevel = player.level;
-        const currentBulletDmg = pLevel <= 5 ? 25 : 25 + (pLevel - 5) * 15;
-        const missileDmg = currentBulletDmg * 1.45; // 145% of current bullet damage
+        const currentBulletDmg = (pLevel <= 5 ? 40 : 40 + (pLevel - 5) * 20) * (1 + gameState.bossCount * 0.4) * player.damageMultiplier;
+        const missileDmg = currentBulletDmg * gameState.boomDamageMultiplier;
 
         // Boom heal on hit as requested
         player.hp = Math.min(player.maxHp, player.hp + 50);
@@ -851,6 +860,12 @@ class Missile {
         let finalDamage = missileDmg;
         if (target === entities.boss) {
             finalDamage = missileDmg * 5;
+            // Boss only takes 50% damage from teammate's missiles? 
+            // Wait, the request says "Chiến boss chỉe nhận 50% sát thương từ đognf đọi gay ra".
+            // If the missile was fired by an ally, it should be reduced.
+            // Let's add 'isAlly' to missiles.
+            if (this.isAlly) finalDamage *= 0.5;
+            
             target.hp -= finalDamage;
             this.bounces = gameState.maxMissileBounces; // Force stop after boss hit
             if (target.hp <= 0) {
@@ -1136,10 +1151,11 @@ function fireMissile() {
         gameState.boomTimer = 0;
         playSound('explosion');
 
-        // Task 9: Allies 50% chance to fire bomb
+        // Task 9: Allies chance to fire bomb (20% default, 30% during boss)
+        const allyBoomChance = entities.boss ? 0.3 : 0.2;
         for (let i = 0; i < entities.allies.length; i++) {
-            if (Math.random() < 0.5) {
-                entities.missiles.push(new Missile(entities.allies[i].x, entities.allies[i].y));
+            if (Math.random() < allyBoomChance) {
+                entities.missiles.push(new Missile(entities.allies[i].x, entities.allies[i].y, null, true));
             }
         }
         updateUI();
@@ -1341,10 +1357,16 @@ function update(dt) {
         if (hitEntity) {
             let data = frameHits.get(hitEntity);
             if (!data) {
-                data = { dmg: 0, count: 0, x: hitEntity.x, y: hitEntity.y };
+                data = { dmg: 0, count: 0, x: hitEntity.x, y: hitEntity.y, allyDmg: 0 };
                 frameHits.set(hitEntity, data);
             }
-            data.dmg += b.damage;
+            
+            let currentDmg = b.damage;
+            if (hitEntity === entities.boss && b.isAlly) {
+                currentDmg *= 0.5; // Boss takes 50% less damage from ally bullets
+            }
+            
+            data.dmg += currentDmg;
             data.count++;
             entities.bullets.splice(bi, 1);
         }
@@ -1498,7 +1520,11 @@ function update(dt) {
                 }
             } else if (p.type === 'B') {
                 gameState.boomChargeSpeed = Math.max(2000, gameState.boomChargeSpeed - 500);
-                gameState.maxMissileBounces++;
+                if (gameState.maxMissileBounces < 3) {
+                    gameState.maxMissileBounces++;
+                } else {
+                    gameState.boomDamageMultiplier += 0.1; // +10% damage if already at max bounces
+                }
             } else if (p.type === 'U') {
                 if (gameState.weaponTier < 2) {
                     gameState.weaponTier++;
