@@ -32,7 +32,7 @@ async function loadSound(name, url) {
 }
 
 function playSound(name, volume = 0.4) {
-    if (audioCtx.state === 'suspended') return;
+    if (audioCtx.state === 'suspended' || gameState.isPaused) return;
 
     // Pixel-Art Style Synthesized Sounds
     if (name === 'shoot') {
@@ -1034,9 +1034,11 @@ function togglePause() {
     if (gameState.isPaused) {
         screen.classList.remove('hidden');
         screen.classList.add('flex');
+        if (audioCtx.state === 'running') audioCtx.suspend();
     } else {
         screen.classList.remove('flex');
         screen.classList.add('hidden');
+        if (audioCtx.state === 'suspended') audioCtx.resume();
     }
 }
 
