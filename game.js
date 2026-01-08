@@ -125,7 +125,7 @@ const gameState = {
     sfxVolume: parseFloat(localStorage.getItem('space_shooter_sfx_volume')) || 0.6,
     bgmVolume: parseFloat(localStorage.getItem('space_shooter_bgm_volume')) || 0.4,
     graphicsQuality: localStorage.getItem('space_shooter_graphics') || 'high',
-    language: localStorage.getItem('space_shooter_lang') || 'vi',
+    language: localStorage.getItem('game_lang') || 'vn',
 
     // New Mechanics
     uDropChanceModifier: 1.0,
@@ -155,8 +155,7 @@ const gameState = {
 
     // Weapon Tiers: 0 (Yellow), 1 (Green), 2 (Blue)
     weaponTier: 0,
-    boomDamageMultiplier: 1.1,
-    language: localStorage.getItem('game_lang') || 'vn'
+    boomDamageMultiplier: 1.1
 };
 
 const translations = {
@@ -628,17 +627,15 @@ class Player {
             
             // Task: Cap fire rate at 1 volley per second (1000ms)
             // Anything beyond that is converted: +10% speed bonus = +3% damage
-            let baseInterval = 160; 
+            let baseInterval = 350; 
             let targetInterval = baseInterval / (1 + levelBonus);
             
             let finalInterval = targetInterval;
             let excessDamageBonus = 1.0;
-            const INITIAL_CAP_MS = 667; // 1.5 shots/s
-            const MAX_CAP_MS = 400;     // 2.5 shots/s
-            
-            // Limit scales from 1.5 at Level 1 to 2.5 at Higher Levels
-            // We can scale the cap based on level, e.g., reaching max cap at Level 10
-            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 30);
+            const INITIAL_CAP_MS = 450; // ~2.2 shots/s (1000/450)
+            const MAX_CAP_MS = 300;     // ~3.3 shots/s (1000/300)
+            // Limit scales from 2.0 at Level 1 to 3.5 at Level 10
+            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 24);
 
             if (targetInterval < currentCap) {
                 finalInterval = currentCap;
@@ -1332,12 +1329,12 @@ function fireMissile() {
 }
 
 function updateUI() {
-    document.getElementById('score-val').innerText = gameState.score;
+    document.getElementById('score-val').innerText = Math.floor(gameState.score);
     document.getElementById('level-val').innerText = gameState.level;
     const nextBossEl = document.getElementById('next-boss-val');
     if (nextBossEl) {
-        const remaining = Math.max(0, gameState.nextBossScore - gameState.score);
-        nextBossEl.innerText = Math.floor(remaining);
+        // Show the actual milestone score (e.g. 2000, 6000, etc.)
+        nextBossEl.innerText = Math.floor(gameState.nextBossScore);
     }
 
     // Update HP Bar & Text
