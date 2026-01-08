@@ -11,7 +11,7 @@ const ASSETS_TO_CACHE = [
   './Public/Boss.png',
   './Public/Fire.png',
   './Public/Nổ.png',
-  './Public/đòng đọi.png'
+  './Public/đồng đội.png'
 ];
 
 self.addEventListener('install', (event) => {
