@@ -16,12 +16,7 @@ const ASSETS = {
     background: "Public/eec663343d1d41c9fd5baf68d1e30147.0000000.jpg"
 };
 
-const SOUNDS = {
-    shoot: "Public/shoot.mp3",
-    explosion: "Public/explosion.mp3",
-    boom: "Public/boom.mp3",
-    powerup: "Public/powerup.mp3"
-};
+const SOUNDS = {}; // All sounds are now synthesized for Pixel-Art style
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const audioBuffers = {};
@@ -37,7 +32,96 @@ async function loadSound(name, url) {
 }
 
 function playSound(name, volume = 0.4) {
-    if (!audioBuffers[name] || audioCtx.state === 'suspended') return;
+    if (audioCtx.state === 'suspended') return;
+
+    // Pixel-Art Style Synthesized Sounds
+    if (name === 'shoot') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square'; // Square wave for that NES/Pixel punch
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.04 * gameState.sfxVolume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+        return;
+    }
+
+    if (name === 'explosion') {
+        const duration = 0.3;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const noise = audioCtx.createBufferSource();
+
+        // White noise for "crunchy" pixel explosion
+        const bufferSize = audioCtx.sampleRate * duration;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+        noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1000, audioCtx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + duration);
+
+        gain.gain.setValueAtTime(0.12 * gameState.sfxVolume, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+        noise.start();
+        return;
+    }
+
+    if (name === 'boom') {
+        const duration = 0.6;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + duration);
+
+        // Add a bit of "rumble" with square wave overlay
+        const osc2 = audioCtx.createOscillator();
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(60, audioCtx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + duration);
+
+        gain.gain.setValueAtTime(0.2 * gameState.sfxVolume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+        osc.connect(gain);
+        osc2.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(); osc2.start();
+        osc.stop(audioCtx.currentTime + duration);
+        osc2.stop(audioCtx.currentTime + duration);
+        return;
+    }
+
+    if (name === 'powerup') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+        osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.1 * gameState.sfxVolume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+        return;
+    }
+
+    if (!audioBuffers[name]) return;
     const source = audioCtx.createBufferSource();
     source.buffer = audioBuffers[name];
     const gainNode = audioCtx.createGain();
@@ -292,7 +376,7 @@ class Player {
         }
         count = Math.min(count, 5);
 
-        const spread = 0.08; // Reduced spread for higher concentration
+        const spread = 0.9; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
         let bulletDamage = this.level <= 5 ? 25 : 25 + (this.level - 5) * 15;
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
@@ -1424,4 +1508,3 @@ function init() {
 }
 
 preload();
-
