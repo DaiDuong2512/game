@@ -397,54 +397,47 @@ function prerender() {
 
     // --- Prerender Enemies (GPU Texture Batching) ---
     const enemyTypes = [
-        { name: 'small', color: '#ff4444', size: 32 },
-        { name: 'medium', color: '#ffaa00', size: 48 }
+        { name: 'small', color: '#ff4444', size: 32, img: images.enemySmall },
+        { name: 'medium', color: '#ffaa00', size: 48, img: images.enemyMedium }
     ];
 
     enemyTypes.forEach(t => {
         // Base and Shield versions
         [false, true].forEach(isBuffed => {
             const canv = document.createElement('canvas');
-            canv.width = t.size + 30; // More padding for buffed glow
-            canv.height = t.size + 30;
+            canv.width = t.size + 40; // Extra padding for glow and effects
+            canv.height = t.size + 40;
             const c = canv.getContext('2d');
             const center = canv.width / 2;
 
-            // Buffed enemies (multi-bullet) use a more intense purple/magenta color scheme
+            // Buffed enemies (multi-bullet) use a more intense purple/magenta tint
             const mainColor = isBuffed ? '#d946ef' : t.color;
             const glowColor = isBuffed ? '#ff00ff' : t.color;
 
-            c.shadowBlur = isBuffed ? 15 : 10;
-            c.shadowColor = glowColor;
-            
-            c.fillStyle = mainColor;
-            c.beginPath();
-            if (isBuffed) {
-                // Buffed shape: More aggressive with extra wings
-                c.moveTo(center, center - t.size / 2); // Tip
-                c.lineTo(center - t.size / 1.5, center + t.size / 3); // Left wing outer
-                c.lineTo(center - t.size / 3, center + t.size / 5); // Left wing inner
-                c.lineTo(center - t.size / 2, center + t.size / 1.5); // Bottom left
-                c.lineTo(center, center + t.size / 3); // Notch
-                c.lineTo(center + t.size / 2, center + t.size / 1.5); // Bottom right
-                c.lineTo(center + t.size / 3, center + t.size / 5); // Right wing inner
-                c.lineTo(center + t.size / 1.5, center + t.size / 3); // Right wing outer
-            } else {
-                // Normal ship shape
-                c.moveTo(center, center - t.size / 2);
-                c.lineTo(center - t.size / 2, center + t.size / 2);
-                c.lineTo(center, center + t.size / 4);
-                c.lineTo(center + t.size / 2, center + t.size / 2);
-            }
-            c.closePath();
-            c.fill();
+            c.save();
+            c.translate(center, center);
 
-            // Cockpit
-            c.shadowBlur = 0;
-            c.fillStyle = isBuffed ? '#fff' : '#fff';
-            c.beginPath();
-            c.arc(center, center + t.size / 6, t.size / 6, 0, Math.PI * 2);
-            c.fill();
+            // GPU-Style Tinting: STRICTLY using PNGs as requested
+            if (t.img && t.img.width > 0) {
+                const w = t.size;
+                const h = t.size;
+
+                // 1. Shadow/Glow (GPU Accelerated)
+                c.shadowBlur = isBuffed ? 18 : 12;
+                c.shadowColor = glowColor;
+                
+                // 2. Base Image (PNG)
+                c.drawImage(t.img, -w / 2, -h / 2, w, h);
+
+                // 3. Color Tinting (GPU source-atop)
+                c.globalCompositeOperation = 'source-atop';
+                c.fillStyle = mainColor;
+                c.globalAlpha = 0.45; 
+                c.fillRect(-w/2, -h/2, w, h);
+                c.globalAlpha = 1.0;
+                c.globalCompositeOperation = 'source-over';
+            }
+            c.restore();
 
             const suffix = (isBuffed ? '_buffed' : '');
             TEXTURES['enemy_' + t.name + suffix] = canv;
@@ -510,12 +503,22 @@ class Ally {
     }
 
     update(dt) {
-        // Position logic: Balanced 2 columns, slightly higher position
-        const isLeft = this.index % 2 === 0;
-        const colIndex = Math.floor(this.index / 2); // row in column
-
-        const offsetX = isLeft ? -45 - (colIndex * 15) : 45 + (colIndex * 15);
-        const offsetY = -5 + (colIndex * 25); // Negative/near zero is higher than before
+        // Balanced positioning for up to 6 allies
+        let offsetX, offsetY;
+        const count = entities.allies.length;
+        const colIndex = Math.floor(this.index / 2);
+        
+        if (count === 3) {
+            // Special case for exactly 3: Triangle formation (2 sides, 1 rear/center)
+            if (this.index === 0) { offsetX = -50; offsetY = -10; }
+            else if (this.index === 1) { offsetX = 50; offsetY = -10; }
+            else { offsetX = 0; offsetY = 35; }
+        } else {
+            // General grid-like formation for other counts
+            const isLeft = this.index % 2 === 0;
+            offsetX = isLeft ? -45 - (colIndex * 15) : 45 + (colIndex * 15);
+            offsetY = -5 + (colIndex * 25);
+        }
 
         const tx = this.parent.x + offsetX;
         const ty = this.parent.y + offsetY;
@@ -549,8 +552,12 @@ class Ally {
                 // Auto-target boss: Allies focus fire on the boss
                 baseAngle = Math.atan2(entities.boss.y - this.y, entities.boss.x - this.x);
             } else {
-                // Straighter angle when no boss is present (reduced from 0.1 to 0.05)
-                baseAngle = -Math.PI / 2 + (this.index % 2 === 0 ? -0.05 : 0.05) * (colIndex + 1);
+                // Straighter angle when no boss is present (Special case for 3rd ally to fire straight)
+                if (count === 3 && this.index === 2) {
+                    baseAngle = -Math.PI / 2;
+                } else {
+                    baseAngle = -Math.PI / 2 + (this.index % 2 === 0 ? -0.05 : 0.05) * (colIndex + 1);
+                }
             }
 
             for (let i = 0; i < allyBulletCount; i++) {
@@ -736,17 +743,17 @@ class Player {
         let count = Math.floor(this.level * 2 + 1);
         if (gameState.weaponTier === 0 && count > 5) {
             gameState.weaponTier = 1;
-            // Upgrade Effect: Start with 3 bullets and 2 allies to prevent damage drop
+            // Upgrade Effect: Start with 3 bullets and 3 allies (Task Update)
             this.level = 1; 
             count = 3;
-            while (entities.allies.length < 2) {
+            while (entities.allies.length < 3) {
                 entities.allies.push(new Ally(player, entities.allies.length));
             }
         } else if (gameState.weaponTier === 1 && count > 5) {
             gameState.weaponTier = 2;
             this.level = 1; 
             count = 3;
-            while (entities.allies.length < 2) {
+            while (entities.allies.length < 3) {
                 entities.allies.push(new Ally(player, entities.allies.length));
             }
         }
@@ -1203,11 +1210,11 @@ class Boss {
         }
 
         this.fireTimer += dt;
-        this.lightningTimer += dt;
-
-        const bossFireRate = 1500 / (1 + gameState.bossCount * 0.2);
+        
+        // Task: Boss fire rate 0.6/s (~1667ms)
+        const bossFireRate = 2000 / (1 + gameState.bossCount * 0.2);
         let finalFireRate = this.isSuper ? bossFireRate * 0.7 : bossFireRate;
-        finalFireRate = Math.max(1000, finalFireRate); // Cap at 1 shot per second
+        finalFireRate = Math.max(1667, finalFireRate); 
 
         if (this.fireTimer > finalFireRate) { // Progressive fire rate
             const spreadCount = this.isSuper ? 5 : 3;
@@ -1217,32 +1224,14 @@ class Boss {
             this.fireTimer = 0;
         }
 
-        // Lightning Strike Attack: Now a fast projectile instead of instant damage
-        const lightningInterval = this.isSuper ? 4000 : 7000;
-        if (this.lightningTimer > lightningInterval) {
-            this.lightningTimer = 0;
-            
-            // Calculate angle towards player
-            const dx = player.x - this.x;
-            const dy = player.y - this.y;
-            const angle = Math.atan2(dy, dx);
-            
-            // Spawn a "Cyan" lightning projectile (Speed 6.5, slightly faster than normal 4.5)
-            // Using isDebuff=true and isBossSpeedDebuff flag for the cyan visual
-            const b = new Bullet(this.x, this.y, angle, 200 + (player.maxHp * 0.1), true, true);
-            b.isBossSpeedDebuff = true; // Force cyan visual
-            b.vx = Math.cos(angle) * 6.5; 
-            b.vy = Math.sin(angle) * 6.5;
-            entities.enemyBullets.push(b);
-            
-            playSound('debuff');
-            gameState.shake = 5;
-        }
+        // Lightning Strike Attack removed as per request (Tia giảm tốc)
 
         this.debuffTimer += dt;
-        if (this.debuffTimer > 6000) { // Slower (was 4000)
-            for (let i = 0; i < 16; i++) {
-                const angle = (i / 16) * Math.PI * 2 + (this.moveTimer / 400);
+        if (this.debuffTimer > 6000) { 
+            // Task: Purple rays sparser (reduced from 16 to 10)
+            const rayCount = 10;
+            for (let i = 0; i < rayCount; i++) {
+                const angle = (i / rayCount) * Math.PI * 2 + (this.moveTimer / 400);
                 entities.enemyBullets.push(new Bullet(this.x, this.y, angle, 0, true, true));
             }
             this.debuffTimer = 0;
@@ -1837,6 +1826,16 @@ function update(dt) {
             if (p.type === 'W') {
                 player.level += 0.5;
                 player.damageMultiplier *= 1.05; // Reduced from 1.1 (Upgrade damage by 5% for each bullet upgrade buff)
+
+                // Task: Ensure transition from 5 rays (level 2.0) to 3 rays (level 1.0) of next tier
+                let count = Math.floor(player.level * 2 + 1);
+                if (count > 5 && gameState.weaponTier < 2) {
+                    gameState.weaponTier++;
+                    player.level = 1; // Start with 3 bullets of new tier
+                    while (entities.allies.length < 3) {
+                        entities.allies.push(new Ally(player, entities.allies.length));
+                    }
+                }
             } else if (p.type === 'H') {
                 // Scaling: 250 + 10% of max HP
                 const healAmt = 250 + player.maxHp * 0.1;
@@ -1874,9 +1873,10 @@ function update(dt) {
 
                 if (gameState.weaponTier < 2) {
                     gameState.weaponTier++;
-                    // Starting at level 1 (3 rays) and 2 allies to maintain power level
-                    player.level = 1; 
-                    while (entities.allies.length < 2) {
+                    // Task: Upgrade tier while preserving/improving rays
+                    // 1 yellow (lvl 0) -> 3 green (lvl 1.0) | 4 yellow (lvl 1.5) -> 4 green (lvl 1.5)
+                    player.level = Math.max(1.0, player.level); 
+                    while (entities.allies.length < 3) {
                         entities.allies.push(new Ally(player, entities.allies.length));
                     }
                 } else if (player.level < 2) {
