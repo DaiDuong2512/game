@@ -206,12 +206,27 @@ class Ally {
 
         if (this.fireTimer > allyFireRate) {
             const playerBulletDmg = player.level <= 5 ? 25 : 25 + (player.level - 5) * 15;
-            // Ally fire straight up with slight tilt if many
-            const spread = (this.index % 2 === 0 ? -0.1 : 0.1) * (colIndex + 1);
-            const b = new Bullet(this.x, this.y, -Math.PI / 2 + spread, playerBulletDmg * 0.5);
-            b.radius = 2.5;
-            b.isLong = true;
-            entities.bullets.push(b);
+
+            // Task: Allies upgrade bullet count (rays) based on Player's weapon tier
+            const allyBulletCount = gameState.weaponTier + 1; // Tier 0 (Yellow): 1 ray, 1 (Green): 2 rays, 2 (Blue): 3 rays
+            const allySpread = 0.05;
+            const baseAngle = -Math.PI / 2 + (this.index % 2 === 0 ? -0.1 : 0.1) * (colIndex + 1);
+
+            for (let i = 0; i < allyBulletCount; i++) {
+                const offsetAngle = allyBulletCount > 1 ? (i - (allyBulletCount - 1) / 2) * allySpread : 0;
+                const b = new Bullet(
+                    this.x,
+                    this.y,
+                    baseAngle + offsetAngle,
+                    playerBulletDmg * 0.5,
+                    false,
+                    false,
+                    gameState.weaponTier
+                );
+                b.radius = 2.5;
+                b.isLong = true;
+                entities.bullets.push(b);
+            }
             this.fireTimer = 0;
         }
     }
@@ -1070,13 +1085,21 @@ function update(dt) {
         spawnBase = 1800;
     }
 
-    if (spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
+    if (!gameState.isBossFight && spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
         spawnEnemy();
         spawnTimer = 0;
     }
 
     if (!gameState.isBossFight && gameState.score >= gameState.nextBossScore) {
         gameState.isBossFight = true;
+
+        // Task: Spawn 3 + Level medium minions along with boss
+        const minionCount = 3 + gameState.level;
+        for (let i = 0; i < minionCount; i++) {
+            const x = 50 + Math.random() * (canvas.width - 100);
+            entities.enemies.push(new Enemy(x, -50 - (Math.random() * 150), 'medium'));
+        }
+
         entities.boss = new Boss();
         const warn = document.getElementById('boss-warning');
         const warnText = warn.querySelector('div');
