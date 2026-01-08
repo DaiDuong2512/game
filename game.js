@@ -627,15 +627,16 @@ class Player {
             
             // Task: Cap fire rate at 1 volley per second (1000ms)
             // Anything beyond that is converted: +10% speed bonus = +3% damage
-            let baseInterval = 350; 
+            let baseInterval = 286; 
             let targetInterval = baseInterval / (1 + levelBonus);
             
             let finalInterval = targetInterval;
             let excessDamageBonus = 1.0;
-            const INITIAL_CAP_MS = 450; // ~2.2 shots/s (1000/450)
-            const MAX_CAP_MS = 300;     // ~3.3 shots/s (1000/300)
-            // Limit scales from 2.0 at Level 1 to 3.5 at Level 10
-            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 24);
+            const INITIAL_CAP_MS = 286; // 3.5 shots/s (1000/286)
+            const MAX_CAP_MS = 200;     // 5.0 shots/s (1000/200)
+            
+            // Limit scales from 3.5 at Level 1 to 5.0 at Level 10
+            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 10);
 
             if (targetInterval < currentCap) {
                 finalInterval = currentCap;
@@ -1254,7 +1255,7 @@ function killEnemy(e) {
     // Scaling: 50 + 2% of max HP
     player.hp = Math.min(player.maxHp, player.hp + (50 + player.maxHp * 0.02));
 
-    let totalDropChance = e.type === 'small' ? 0.04 : 0.18;
+    let totalDropChance = e.type === 'small' ? 0.10 : 0.28;
     
     // Applying Luck Fatigue penalty
     if (gameState.streakPenaltyType === 1) totalDropChance *= 0.2; // 80% reduction
@@ -1264,12 +1265,35 @@ function killEnemy(e) {
     if (rand < totalDropChance) {
         let type = 'W';
         const innerRand = Math.random();
-        if (innerRand < 0.25) type = 'A';
-        else if (innerRand < 0.45) type = 'B';
-        else if (innerRand < 0.65) type = 'H';
-        else if (innerRand < 0.85) type = 'S';
-        // Small chance for 'U' from medium only
-        if (e.type === 'medium' && Math.random() < (0.01 * gameState.uDropChanceModifier)) type = 'U';
+
+        // Task: Increase 'W' (Weapon) drop rate significantly in Yellow/Green Tiers
+        if (gameState.weaponTier === 0) {
+            // 70% chance for 'W', 30% for others
+            if (innerRand < 0.70) type = 'W';
+            else if (innerRand < 0.77) type = 'A';
+            else if (innerRand < 0.84) type = 'B';
+            else if (innerRand < 0.91) type = 'H';
+            else type = 'S';
+        } else if (gameState.weaponTier === 1) {
+            // 40% chance for 'W', 60% for others
+            if (innerRand < 0.40) type = 'W';
+            else if (innerRand < 0.55) type = 'A';
+            else if (innerRand < 0.70) type = 'B';
+            else if (innerRand < 0.85) type = 'H';
+            else type = 'S';
+        } else {
+            // Normal distribution (Tier 2 and above)
+            if (innerRand < 0.25) type = 'A';
+            else if (innerRand < 0.45) type = 'B';
+            else if (innerRand < 0.65) type = 'H';
+            else if (innerRand < 0.85) type = 'S';
+            else type = 'W';
+        }
+        
+        // Small chance for 'U' (Upgrade)
+        const uBaseRate = (e.type === 'medium') ? 0.02 : 0.005; 
+        if (Math.random() < (uBaseRate * gameState.uDropChanceModifier)) type = 'U';
+        
         entities.powerUps.push(new PowerUp(e.x, e.y, type));
     }
 
@@ -1590,11 +1614,20 @@ function update(dt) {
                 else if (gameState.streakPenaltyType === 2) numDrops = Math.max(1, Math.floor(numDrops * 0.5));
 
                 const dropTypes = ['W', 'H', 'A', 'B', 'S'];
-                const uChance = (isSuper ? 0.30 : 0.04) * gameState.uDropChanceModifier;
+                let uChance = (isSuper ? 0.30 : 0.04) * gameState.uDropChanceModifier;
 
                 for (let i = 0; i < numDrops; i++) {
-                    // Chance for 'U' (Weapon Upgrade) based on boss type, otherwise random other buff
-                    const type = Math.random() < uChance ? 'U' : dropTypes[Math.floor(Math.random() * dropTypes.length)];
+                    // Force 'W' more often in Yellow Tier for bosses
+                    let type;
+                    if (Math.random() < uChance) {
+                        type = 'U';
+                    } else if (gameState.weaponTier === 0 && Math.random() < 0.6) {
+                        type = 'W'; // 60% of non-U drops are W in Yellow Tier
+                    } else if (gameState.weaponTier === 1 && Math.random() < 0.35) {
+                        type = 'W'; // 35% of non-U drops are W in Green Tier
+                    } else {
+                        type = dropTypes[Math.floor(Math.random() * dropTypes.length)];
+                    }
                     entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops-1)/2) * 40, entities.boss.y, type));
                 }
 
