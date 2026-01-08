@@ -16,6 +16,37 @@ const ASSETS = {
     background: "Public/eec663343d1d41c9fd5baf68d1e30147.0000000.jpg"
 };
 
+const SOUNDS = {
+    shoot: "Public/shoot.mp3",
+    explosion: "Public/explosion.mp3",
+    boom: "Public/boom.mp3",
+    powerup: "Public/powerup.mp3"
+};
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const audioBuffers = {};
+
+async function loadSound(name, url) {
+    try {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        audioBuffers[name] = await audioCtx.decodeAudioData(arrayBuffer);
+    } catch (e) {
+        console.warn(`Failed to load sound: ${name}`);
+    }
+}
+
+function playSound(name, volume = 0.4) {
+    if (!audioBuffers[name] || audioCtx.state === 'suspended') return;
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffers[name];
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = volume * gameState.sfxVolume;
+    source.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    source.start(0);
+}
+
 const images = {};
 let loadedImages = 0;
 const totalImages = Object.keys(ASSETS).length;
@@ -25,23 +56,26 @@ let bestLevel = parseInt(localStorage.getItem('space_shooter_best_level')) || 1;
 
 const gameState = {
     isStarted: false,
+    isLooping: false,
     isGameOver: false,
     isPaused: false,
     score: 0,
     level: 1,
-    nextBossScore: 2500,
+    nextBossScore: 1500,
     isBossFight: false,
     mouse: { x: window.innerWidth / 2, y: window.innerHeight - 100 },
     joystick: { x: 0, y: 0, active: false },
     isMobile: false,
     shake: 0,
     bgY: 0,
+    sfxVolume: 0.8,
+    graphicsQuality: 'high',
 
     // BOOM System Upgraded (Modified for Task 9)
     boomCharges: 1,
     boomMaxCharges: 1, // Max 1, no stacking as per Task 9
     boomTimer: 0,
-    boomChargeSpeed: 5000, // 5s as per Task 9
+    boomChargeSpeed: 6500, // Increased downtime by 30% (5000 * 1.3 = 6500)
     boomGainAmount: 1,
     boomGCD: 0,
     isFiringBooms: false,
@@ -144,8 +178,10 @@ class Ally {
         ctx.translate(this.x, this.y);
 
         // Ally appearance (straightened)
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = '#0ea5e9';
+        if (gameState.graphicsQuality === 'high') {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0ea5e9';
+        }
         ctx.drawImage(images.ally, -10, -10, 20, 20);
 
         // HP mini-bar for ally
@@ -256,7 +292,7 @@ class Player {
         }
         count = Math.min(count, 5);
 
-        const spread = 0.5;
+        const spread = 0.9; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
         let bulletDamage = this.level <= 5 ? 25 : 25 + (this.level - 5) * 15;
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
@@ -276,16 +312,17 @@ class Player {
             );
             entities.bullets.push(b);
         }
+        playSound('shoot', 0.3);
     }
 
     draw() {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        // Task 5: Shield visual
+        // Task 5: Shield visual (Reduced to cover only player)
         if (this.shield > 0) {
             ctx.beginPath();
-            ctx.arc(0, 0, 130, 0, Math.PI * 2);
+            ctx.arc(0, 0, 55, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
             ctx.lineWidth = 3;
             ctx.stroke();
@@ -294,9 +331,11 @@ class Player {
         }
 
         ctx.rotate(this.tilt);
-        ctx.filter = 'brightness(1.3) contrast(1.1)';
-        if (this.jammedTimer > 0) ctx.filter = 'grayscale(100%) brightness(1.5)';
-        if (this.slowTimer > 0) ctx.filter = 'hue-rotate(280deg) saturate(2) brightness(1.3)';
+        if (gameState.graphicsQuality === 'high') {
+            ctx.filter = 'brightness(1.3) contrast(1.1)';
+            if (this.jammedTimer > 0) ctx.filter = 'grayscale(100%) brightness(1.5)';
+            if (this.slowTimer > 0) ctx.filter = 'hue-rotate(280deg) saturate(2) brightness(1.3)';
+        }
         ctx.drawImage(images.player, -this.width / 2, -this.height / 2, this.width, this.height);
 
         if (!gameState.isGameOver) {
@@ -348,14 +387,16 @@ class Bullet {
 
                 // Opacity 100% and Brighter by 40% for player bullets
                 ctx.globalAlpha = 1.0;
-                ctx.filter = 'brightness(1.4)';
+                if (gameState.graphicsQuality === 'high') ctx.filter = 'brightness(1.4)';
             } else {
                 color = '#ef4444'; // Enemy Red
             }
 
             ctx.fillStyle = color;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = color;
+            if (gameState.graphicsQuality === 'high') {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = color;
+            }
 
             // Add a bright core for player bullets
             if (!this.isEnemy) {
@@ -475,8 +516,10 @@ class Enemy {
 
     draw() {
         ctx.save();
-        ctx.filter = 'brightness(1.4) saturate(1.2)';
-        if (this.bulletCount > 1) ctx.filter += ' hue-rotate(90deg)';
+        if (gameState.graphicsQuality === 'high') {
+            ctx.filter = 'brightness(1.4) saturate(1.2)';
+            if (this.bulletCount > 1) ctx.filter += ' hue-rotate(90deg)';
+        }
         const img = this.type === 'small' ? images.enemySmall : images.enemyMedium;
         ctx.drawImage(img, this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
 
@@ -545,11 +588,15 @@ class Missile {
     }
 
     hit(target) {
+        const pLevel = player.level;
+        const currentBulletDmg = pLevel <= 5 ? 25 : 25 + (pLevel - 5) * 15;
+        const missileDmg = currentBulletDmg * 1.45; // 145% of current bullet damage
+
         if (target === entities.boss) {
-            target.hp -= 1000;
+            target.hp -= missileDmg * 5; // Boss multiplier for missiles remains higher but scales
             this.bounces = gameState.maxMissileBounces; // Force stop after boss hit
         } else {
-            target.hp -= 1500;
+            target.hp -= missileDmg;
         }
         this.hitTargets.add(target);
         createExplosion(this.x, this.y);
@@ -668,12 +715,14 @@ class Boss {
         const barY = 70;
         ctx.save();
 
-        if (this.isSuper) {
-            ctx.filter = 'brightness(1.5) hue-rotate(290deg) saturate(1.5)'; // Darker purple/pink for Super Boss
-            ctx.shadowBlur = 30;
-            ctx.shadowColor = '#d946ef';
-        } else {
-            ctx.filter = 'brightness(1.3)'; // Highlight Boss
+        if (gameState.graphicsQuality === 'high') {
+            if (this.isSuper) {
+                ctx.filter = 'brightness(1.5) hue-rotate(290deg) saturate(1.5)';
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = '#d946ef';
+            } else {
+                ctx.filter = 'brightness(1.3)';
+            }
         }
 
         ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
@@ -713,8 +762,10 @@ class PowerUp {
         ctx.translate(this.x, this.y);
         ctx.scale(0.8, 0.8);
         ctx.fillStyle = '#fff';
-        ctx.shadowBlur = 5;
-        ctx.shadowColor = 'rgba(255,255,255,0.5)';
+        if (gameState.graphicsQuality === 'high') {
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = 'rgba(255,255,255,0.5)';
+        }
 
         switch (this.type) {
             case 'W': // Weapon - Triple Bullet icon
@@ -825,9 +876,10 @@ class Explosion {
  */
 const player = new Player();
 
-function createExplosion(x, y) {
+function createExplosion(x, y, shouldShake = false) {
     entities.explosions.push(new Explosion(x, y));
-    gameState.shake = 12;
+    if (shouldShake) gameState.shake = 12;
+    playSound('explosion', 0.7);
 }
 
 function spawnEnemy() {
@@ -844,6 +896,7 @@ function fireMissile() {
         entities.missiles.push(new Missile(player.x, player.y));
         gameState.boomCharges = 0; // No stacking, consuming it
         gameState.boomTimer = 0;
+        playSound('boom', 0.8);
 
         // Task 9: Allies have 50% chance to fire bomb
         entities.allies.forEach(ally => {
@@ -925,6 +978,9 @@ function update(dt) {
 
     const timeFactor = dt / 16.6;
     gameState.bgY += 1.2 * timeFactor;
+    // Prevent precision loss over long play sessions
+    if (gameState.bgY > 1000000) gameState.bgY %= 100000;
+
     if (gameState.shake > 0) gameState.shake *= Math.pow(0.88, timeFactor);
 
     player.update(dt);
@@ -944,11 +1000,21 @@ function update(dt) {
         fireMissile();
     }
 
-    document.getElementById('boom-bar-inner').style.width = (gameState.boomTimer / gameState.boomChargeSpeed * 100) + '%';
+    const bbInner = document.getElementById('boom-bar-inner');
+    if (bbInner) {
+        const percent = gameState.boomCharges >= 1 ? 100 : (gameState.boomTimer / gameState.boomChargeSpeed * 100);
+        bbInner.style.width = percent + '%';
+    }
 
     spawnTimer += dt;
-    // Slower spawn rate for Level 1, scaling more gradually
-    if (spawnTimer > Math.max(600, 2500 - gameState.score / 20)) {
+    // Faster spawn rate after 150 points
+    let spawnBase = 2500;
+    if (gameState.score >= 150) {
+        // Increase speed by 30% for small and 20% for medium (averaging ~25% or applying most aggressive)
+        spawnBase = 1800;
+    }
+
+    if (spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
         spawnEnemy();
         spawnTimer = 0;
     }
@@ -1024,7 +1090,7 @@ function update(dt) {
             entities.boss.hp -= b.damage;
             entities.bullets.splice(bi, 1);
             if (entities.boss.hp <= 0) {
-                createExplosion(entities.boss.x, entities.boss.y);
+                createExplosion(entities.boss.x, entities.boss.y, true); // Boss death = Shake
                 gameState.score += 2000;
                 gameState.bossCount++;
                 gameState.nextBossScore = gameState.score + 3000 + (gameState.bossCount * 1000);
@@ -1037,8 +1103,8 @@ function update(dt) {
     }
 
     entities.enemyBullets.forEach((eb, ebi) => {
-        // Task 5: Shield covers player and teammates and captures bullets easier (radius 130)
-        if (player.shield > 0 && Math.hypot(eb.x - player.x, eb.y - player.y) < 130) {
+        // Task 5: Shield covers player/teammates nearby (Reduced radius for tighter protection)
+        if (player.shield > 0 && Math.hypot(eb.x - player.x, eb.y - player.y) < 60) {
             player.takeDamage(80);
             entities.enemyBullets.splice(ebi, 1);
             return;
@@ -1060,7 +1126,7 @@ function update(dt) {
                 }
 
                 entities.enemyBullets.splice(ebi, 1);
-                createExplosion(player.x, player.y);
+                createExplosion(player.x, player.y, true); // Player hit = Shake
                 updateUI();
             } else {
                 entities.enemyBullets.splice(ebi, 1);
@@ -1074,12 +1140,13 @@ function update(dt) {
             const dmg = e.type === 'small' ? 70 : 150;
             player.takeDamage(dmg);
             e.hp = 0;
-            createExplosion(e.x, e.y);
+            createExplosion(e.x, e.y, true); // Player collision = Shake
         }
     });
 
     entities.powerUps.forEach((p, pi) => {
         if (Math.hypot(p.x - player.x, p.y - player.y) < 38) {
+            playSound('powerup', 0.6);
             if (p.type === 'W') {
                 player.level += 0.5;
             } else if (p.type === 'H') {
@@ -1105,27 +1172,47 @@ function update(dt) {
         }
     });
 
-    // Cleanup (Optimized: single pass filter can be faster, but let's keep it clean for now)
-    entities.bullets = entities.bullets.filter(e => e.y > -100);
-    entities.enemyBullets = entities.enemyBullets.filter(e => e.y < canvas.height + 100);
-    entities.enemies = entities.enemies.filter(e => e.y < canvas.height + 100 && e.hp > 0);
-    entities.missiles = entities.missiles.filter(e => e.bounces < gameState.maxMissileBounces);
+    // Cleanup (Now removing entities immediately when they leave the screen)
+    entities.bullets = entities.bullets.filter(e => e.y > 0 && e.y < canvas.height && e.x > 0 && e.x < canvas.width);
+    entities.enemyBullets = entities.enemyBullets.filter(e => e.y > 0 && e.y < canvas.height && e.x > 0 && e.x < canvas.width);
+    entities.enemies = entities.enemies.filter(e => e.y < canvas.height && e.hp > 0);
+    entities.missiles = entities.missiles.filter(e => e.bounces < gameState.maxMissileBounces && e.y > 0 && e.y < canvas.height && e.x > 0 && e.x < canvas.width);
     entities.explosions = entities.explosions.filter(e => e.life > 0);
-    entities.powerUps = entities.powerUps.filter(e => e.y < canvas.height + 100);
+    entities.powerUps = entities.powerUps.filter(e => e.y < canvas.height);
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#020617'; // Fill with space color to prevent flicker gaps
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     ctx.save();
     if (gameState.shake > 1) {
         ctx.translate(Math.random() * gameState.shake - gameState.shake / 2, Math.random() * gameState.shake - gameState.shake / 2);
     }
 
-    // Scroll background
-    const bgH = canvas.height;
-    const sy = gameState.bgY % bgH;
-    ctx.drawImage(images.background, 0, sy, canvas.width, bgH);
-    ctx.drawImage(images.background, 0, sy - bgH, canvas.width, bgH);
+    // Simplified Seamless Mirrored Scroll (2-Panel Strip)
+    const img = images.background;
+    if (img && img.complete) {
+        const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+        const dW = img.width * scale;
+        const dH = img.height * scale;
+        const dX = (canvas.width - dW) / 2;
+
+        const totalH = dH * 2;
+        const sy = (gameState.bgY % totalH);
+
+        // Panel 1: Normal Image
+        ctx.drawImage(img, dX, sy, dW, dH);
+        ctx.drawImage(img, dX, sy - totalH, dW, dH);
+
+        // Panel 2: Mirrored Image (Offset by dH)
+        ctx.save();
+        ctx.translate(0, sy - dH);
+        ctx.scale(1, -1);
+        ctx.drawImage(img, dX, -dH, dW, dH); // Draw at -dH relative to translate
+        ctx.drawImage(img, dX, -dH + totalH, dW, dH);
+        ctx.restore();
+    }
 
     entities.powerUps.forEach(e => e.draw());
     entities.bullets.forEach(e => e.draw());
@@ -1187,28 +1274,41 @@ function preload() {
         };
         images[key] = img;
     }
+
+    // Load Sounds
+    for (const key in SOUNDS) {
+        loadSound(key, SOUNDS[key]);
+    }
 }
 
-function init() {
+let listenersInitialized = false;
+
+function setupEventListeners() {
+    if (listenersInitialized) return;
+    listenersInitialized = true;
+
+    // Resize Logic
     const resize = () => {
         const container = document.getElementById('canvas-container');
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight;
+        if (container) {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
     };
-
     window.addEventListener('resize', resize);
     resize();
-    updateUI(); // Fix initial HP display
-
-    // Display Best Scores
-    document.getElementById('best-score').innerText = bestScore;
-    document.getElementById('best-level').innerText = bestLevel;
 
     // Start Button Logic
-    document.getElementById('start-btn').addEventListener('click', () => {
-        gameState.isStarted = true;
-        document.getElementById('start-screen').classList.add('hidden');
-    });
+    const startBtn = document.getElementById('start-btn');
+    if (startBtn) {
+        startBtn.addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            gameState.isStarted = true;
+            document.getElementById('start-screen').classList.add('hidden');
+        });
+    }
 
     // Settings Button Logic
     const settingsBtn = document.getElementById('settings-btn');
@@ -1224,6 +1324,33 @@ function init() {
     if (closeSettings) {
         closeSettings.addEventListener('click', () => {
             settingsScreen.classList.add('hidden');
+        });
+    }
+
+    // Settings Functionality
+    const sfxRange = document.getElementById('sfx-range');
+    if (sfxRange) {
+        sfxRange.addEventListener('input', (e) => {
+            gameState.sfxVolume = e.target.value / 100;
+        });
+    }
+
+    const highBtn = document.getElementById('graphics-high');
+    const lowBtn = document.getElementById('graphics-low');
+    if (highBtn && lowBtn) {
+        highBtn.addEventListener('click', () => {
+            gameState.graphicsQuality = 'high';
+            highBtn.classList.replace('bg-white/5', 'bg-amber-400');
+            highBtn.classList.replace('text-white', 'text-slate-950');
+            lowBtn.classList.replace('bg-amber-400', 'bg-white/5');
+            lowBtn.classList.replace('text-slate-950', 'text-white');
+        });
+        lowBtn.addEventListener('click', () => {
+            gameState.graphicsQuality = 'low';
+            lowBtn.classList.replace('bg-white/5', 'bg-amber-400');
+            lowBtn.classList.replace('text-white', 'text-slate-950');
+            highBtn.classList.replace('bg-amber-400', 'bg-white/5');
+            highBtn.classList.replace('text-slate-950', 'text-white');
         });
     }
 
@@ -1243,6 +1370,7 @@ function init() {
     };
 
     const handleMove = (e) => {
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
         const pos = getPos(e);
         gameState.mouse.x = pos.x;
         gameState.mouse.y = pos.y;
@@ -1256,6 +1384,8 @@ function init() {
         gameState.mouse.x = pos.x;
         gameState.mouse.y = pos.y;
         if (e.cancelable) e.preventDefault();
+        // Resume audio on first touch if needed
+        if (audioCtx.state === 'suspended') audioCtx.resume();
     }, { passive: false });
 
     canvas.addEventListener('touchmove', (e) => {
@@ -1275,8 +1405,22 @@ function init() {
         e.preventDefault();
         togglePause();
     });
+}
 
-    requestAnimationFrame(gameLoop);
+function init() {
+    setupEventListeners();
+    updateUI(); // Fix initial HP display
+
+    // Display Best Scores
+    const bs = document.getElementById('best-score');
+    const bl = document.getElementById('best-level');
+    if (bs) bs.innerText = bestScore;
+    if (bl) bl.innerText = bestLevel;
+
+    if (!gameState.isLooping) {
+        gameState.isLooping = true;
+        requestAnimationFrame(gameLoop);
+    }
 }
 
 preload();

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-defender-v1';
+const CACHE_NAME = 'space-defender-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -11,7 +11,12 @@ const ASSETS_TO_CACHE = [
   './Public/Boss.png',
   './Public/Fire.png',
   './Public/Nổ.png',
-  './Public/đồng đội.png'
+  './Public/Đồng đội.png',
+  './Public/eec663343d1d41c9fd5baf68d1e30147.0000000.jpg',
+  './Public/shoot.mp3',
+  './Public/explosion.mp3',
+  './Public/boom.mp3',
+  './Public/powerup.mp3'
 ];
 
 self.addEventListener('install', (event) => {
