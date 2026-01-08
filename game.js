@@ -160,7 +160,7 @@ const gameState = {
 
 const translations = {
     vn: {
-        vanguard: "QUÂN TIÊN PHONG",
+        vanguard: "ĐIỂM SỐ",
         nextBoss: "BOSS TIẾP THEO",
         lvl: "CẤP",
         missionPaused: "TẠM DỪNG NHIỆM VỤ",
@@ -188,7 +188,7 @@ const translations = {
         controlHint: "CHẠM HOẶC CLICK ĐỂ DI CHUYỂN & BẮN"
     },
     en: {
-        vanguard: "VANGUARD UNIT",
+        vanguard: "SCORE",
         nextBoss: "NEXT BOSS IN",
         lvl: "LVL",
         missionPaused: "MISSION PAUSED",
@@ -653,6 +653,48 @@ class Player {
         this.allyDamageRatio = 0.20; // Task: Build start at 20%
     }
 
+    getStats() {
+        const levelBonus = (gameState.level - 1) * 0.1;
+        const baseInterval = 222;
+        let hasteMult = this.hasteTimer > 0 ? 2.0 : 1.0;
+        const targetInterval = baseInterval / (1 + levelBonus) / hasteMult;
+        const INITIAL_CAP_MS = 222;
+        const MAX_CAP_MS = 167;
+        let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 6) / hasteMult;
+        const finalInterval = Math.max(currentCap, targetInterval);
+        
+        let excessDamageBonus = 1.0;
+        if (targetInterval < currentCap) {
+            let excessPercent = (currentCap / targetInterval) - 1;
+            excessDamageBonus = 1 + (excessPercent * 0.3);
+        }
+
+        const rays = Math.floor(this.level * 2 + 1);
+        const shotsPerSec = (1000 / finalInterval).toFixed(1);
+        
+        let baseDmg = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + (gameState.bossCount || 0) * 0.15);
+        if (gameState.weaponTier === 1) baseDmg *= 3.0;
+        if (gameState.weaponTier === 2) baseDmg *= 4.0;
+        const excessDmg = Math.max(1, 1 + (this.level - 12) * 0.1);
+        const bossBonus = 1 + (this.level >= 12 ? (this.bossKillDamageBonus || 0) : 0);
+        const finalDmg = Math.floor(baseDmg * this.damageMultiplier * excessDmg * 1.8 * bossBonus * excessDamageBonus);
+
+        // Calculate Protection %
+        let protection = 0;
+        if (entities.allies.length === 6) protection = 20;
+        else if (entities.allies.length > 2) protection = 10;
+        if (this.damageReductionTimer > 0) protection += 30;
+
+        return {
+            shotsPerSec,
+            rays,
+            damageMultiplier: (this.damageMultiplier * bossBonus).toFixed(1),
+            allyDamagePercent: Math.round(this.allyDamageRatio * 100),
+            finalDmg,
+            protection
+        };
+    }
+
     takeDamage(amt) {
         // Task: Enemy damage scaling (1.6x per level)
         // Level starts at 1, so level 1 has no multiplier (1.6^0 = 1)
@@ -662,6 +704,14 @@ class Player {
         // Task 6: Shield/Skill 30% damage reduction
         if (this.damageReductionTimer > 0) {
             totalDmg *= 0.7;
+        }
+
+        // New: Ally based damage reduction
+        // >2 allies = 10% reduction, 6 allies = 20% reduction
+        if (entities.allies.length === 6) {
+            totalDmg *= 0.8;
+        } else if (entities.allies.length > 2) {
+            totalDmg *= 0.9;
         }
 
         // Task 5: Shield logic (250 + 10% max HP)
@@ -779,7 +829,7 @@ class Player {
         }
         count = Math.min(count, 5);
 
-        const spread = 0.09; // Reduced spread for higher concentration
+        const spread = 0.12; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
         // Task 5: 8% damage bonus per boss killed, max 90%
         let bulletDamage = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + this.bossKillDamageBonus);
@@ -929,6 +979,10 @@ class Enemy {
 
         const baseHp = type === 'small' ? 100 : 400;
         this.hp = baseHp * gameState.difficulty * hpMultiplier;
+        this.maxHp = this.hp; // Store max for health bar
+
+        // Calculate Contact/Bullet Damage for display
+        this.contactDmg = Math.floor(10 * Math.pow(1.6, gameState.level - 1));
 
         let levelSpeedBonus = (gameState.level - 1) * 0.1;
         this.speed = (type === 'small' ? 0.75 : 0.55) + levelSpeedBonus;
@@ -1024,6 +1078,30 @@ class Enemy {
             const img = this.type === 'small' ? images.enemySmall : images.enemyMedium;
             ctx.drawImage(img, Math.floor(this.x - this.width / 2), Math.floor(this.y - this.height / 2), this.width, this.height);
         }
+
+        // --- ENEMY HP DISPLAY ---
+        if (this.y > -50 && this.y < canvas.height + 50) {
+            // HP Bar (very small, below enemy)
+            const bw = this.width * 0.8;
+            const bh = 3;
+            const bx = this.x - bw / 2;
+            const by = this.y + this.height / 2 + 5;
+
+            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            ctx.fillRect(bx, by, bw, bh);
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(bx, by, (this.hp / this.maxHp) * bw, bh);
+
+            // HP Text
+            ctx.fillStyle = "white";
+            ctx.font = "bold 8px Inter";
+            ctx.textAlign = "center";
+            ctx.shadowBlur = 2;
+            ctx.shadowColor = "black";
+            ctx.fillText(`${formatNumber(this.hp)} HP`, Math.floor(this.x), Math.floor(by + bh + 8));
+            ctx.shadowBlur = 0;
+        }
+
         ctx.restore();
     }
 }
@@ -1477,9 +1555,35 @@ function updateUI() {
     document.getElementById('score-val').innerText = formatNumber(gameState.score);
     document.getElementById('level-val').innerText = gameState.level;
     const nextBossEl = document.getElementById('next-boss-val');
+    const nextBossHpEl = document.getElementById('next-boss-hp');
+    const bossRewardEl = document.getElementById('boss-reward-preview');
+
     if (nextBossEl) {
-        // Show the actual milestone score (e.g. 2000, 6000, etc.)
         nextBossEl.innerText = formatNumber(gameState.nextBossScore);
+    }
+
+    if (nextBossHpEl) {
+        // Predict next boss HP based on Boss class logic
+        // If boss exists, show current boss HP as the target info
+        if (entities.boss) {
+            nextBossHpEl.innerText = `HP: ${formatNumber(entities.boss.maxHp)}`;
+            if (bossRewardEl) {
+                bossRewardEl.innerText = entities.boss.isSuper ? "Reward: Super Dmg & HP" : "Reward: +15% HP & Dmg";
+            }
+        } else {
+            const nextBossIdx = gameState.bossCount; 
+            const isSuper = (nextBossIdx + 1) % 5 === 0;
+            const scalingFactor = nextBossIdx >= 1 ? 25000 : 12000;
+            const baseHp = 8000 + (nextBossIdx * scalingFactor);
+            let predictedHp = baseHp + (gameState.accumulatedBossHp || 0);
+            if (isSuper) predictedHp *= 4.5;
+            if (nextBossIdx >= 1) predictedHp *= 1.15;
+            
+            nextBossHpEl.innerText = `HP: ${formatNumber(predictedHp)}`;
+            if (bossRewardEl) {
+                bossRewardEl.innerText = isSuper ? "Reward: Super HP & Dmg Boost" : "Reward: +15% HP & Dmg";
+            }
+        }
     }
 
     // Update HP Bar & Text
@@ -1503,6 +1607,16 @@ function updateUI() {
         bestScore = gameState.score;
         localStorage.setItem('space_shooter_best_score', bestScore);
     }
+
+    // Update Mini Stats
+    const stats = player.getStats();
+    const miniSpeed = document.getElementById('mini-speed');
+    const miniDamage = document.getElementById('mini-damage');
+    const miniAlly = document.getElementById('mini-ally');
+    if (miniSpeed) miniSpeed.innerText = stats.shotsPerSec + '/s';
+    if (miniDamage) miniDamage.innerText = formatNumber(stats.finalDmg);
+    if (miniDef) miniDef.innerText = stats.protection + '%';
+    if (miniAlly) miniAlly.innerText = stats.allyDamagePercent + '%';
 }
 
 function gameOver() {
@@ -1519,6 +1633,38 @@ function togglePause() {
     gameState.isPaused = !gameState.isPaused;
     const screen = document.getElementById('pause-screen');
     if (gameState.isPaused) {
+        // Update Stats before showing the screen
+        const stats = player.getStats();
+
+        document.getElementById('stat-speed').innerText = stats.shotsPerSec + '/s';
+        document.getElementById('stat-damage').innerText = stats.damageMultiplier + 'x';
+        document.getElementById('stat-ally').innerText = stats.allyDamagePercent + '%';
+        document.getElementById('stat-def').innerText = stats.protection + '%';
+        document.getElementById('stat-enemy-dmg').innerText = formatNumber(Math.floor(10 * Math.pow(1.6, gameState.level - 1)));
+        document.getElementById('stat-rays').innerText = stats.rays;
+
+        // Populate Passive List
+        const passiveList = document.getElementById('passive-list');
+        if (passiveList) {
+            passiveList.innerHTML = '';
+            const perks = [];
+            
+            if (gameState.level > 1) perks.push({text: `Lvl ${gameState.level}`, detail: `+${Math.round((gameState.level-1)*10)}% Spd`, color: 'bg-slate-700'});
+            if (gameState.weaponTier === 1) perks.push({text: 'Green Tier', detail: '3.0x Power', color: 'bg-emerald-600'});
+            if (gameState.weaponTier === 2) perks.push({text: 'Blue Tier', detail: '4.0x Power', color: 'bg-blue-600'});
+            if (entities.allies.length > 2) perks.push({text: 'Ally Shield', detail: '-10% Damage', color: 'bg-cyan-600'});
+            if (entities.allies.length === 6) perks.push({text: 'Guardian', detail: '-20% Damage', color: 'bg-indigo-600'});
+            if (gameState.bossCount > 0) perks.push({text: `Boss Slayer`, detail: `+${gameState.bossCount*15}% HP`, color: 'bg-red-600'});
+            if (player.damageReductionTimer > 0) perks.push({text: 'Shielding', detail: '-30% Damage', color: 'bg-blue-400'});
+            
+            perks.forEach(p => {
+                const badge = document.createElement('div');
+                badge.className = `${p.color} text-[8px] px-2 py-1 rounded-lg text-white font-bold flex flex-col items-center min-w-[60px]`;
+                badge.innerHTML = `<span>${p.text}</span><span class="opacity-70 text-[6px] font-normal leading-tight">${p.detail}</span>`;
+                passiveList.appendChild(badge);
+            });
+        }
+
         screen.classList.remove('hidden');
         screen.classList.add('flex');
     } else {
@@ -1913,17 +2059,14 @@ function update(dt) {
                 if (entities.allies.length < 6) {
                     entities.allies.push(new Ally(player, entities.allies.length));
                 } else {
-                    // Replace weakest ally (lowest HP)
-                    let weakestIdx = -1;
-                    let minHp = Infinity;
-                    for (let i = 0; i < entities.allies.length; i++) {
-                        if (entities.allies[i].hp < minHp) {
-                            minHp = entities.allies[i].hp;
-                            weakestIdx = i;
-                        }
-                    }
-                    if (weakestIdx !== -1) {
-                        entities.allies[weakestIdx] = new Ally(player, weakestIdx);
+                    // Task: If already 6 allies, upgrade all allies HP by 3%
+                    entities.allies.forEach(ally => {
+                        ally.maxHp *= 1.03;
+                        ally.hp *= 1.03; 
+                    });
+                    // Also heal a bit
+                    for (let ai = 0; ai < entities.allies.length; ai++) {
+                        entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + 100);
                     }
                 }
             } else if (p.type === 'B') {
