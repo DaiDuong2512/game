@@ -2,6 +2,9 @@
  * Space Shooter Pro - Game Engine
  */
 
+// Force scroll to top immediately on script load to fix mobile viewport bugs
+window.scrollTo(0, 0);
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -445,10 +448,10 @@ function prerender() {
                 // 2. Base Image (PNG)
                 c.drawImage(t.img, -w / 2, -h / 2, w, h);
 
-                // 3. Color Tinting (GPU source-atop) - 30% tint (70% PNG remains)
+                // 3. Color Tinting (GPU source-atop) - 15% tint (85% PNG remains)
                 c.globalCompositeOperation = 'source-atop';
                 c.fillStyle = mainColor;
-                c.globalAlpha = 0.30; 
+                c.globalAlpha = 0.15; 
                 c.fillRect(-w/2, -h/2, w, h);
                 c.globalAlpha = 1.0;
                 c.globalCompositeOperation = 'source-over';
@@ -665,6 +668,7 @@ class Player {
         this.hasteTimer = 0;
         this.damageReductionTimer = 0;
         this.bossKillDamageBonus = 0;
+        this.permDamageReduction = 0; // NEW: Permanent reduction from Shields (Max 40%)
         this.allyDamageRatio = 0.20; // Task: Build start at 20%
     }
 
@@ -694,10 +698,10 @@ class Player {
         const bossBonus = 1 + (this.level >= 12 ? (this.bossKillDamageBonus || 0) : 0);
         const finalDmg = Math.floor(baseDmg * this.damageMultiplier * excessDmg * 1.8 * bossBonus * excessDamageBonus);
 
-        // Calculate Protection %
-        let protection = 0;
-        if (entities.allies.length === 6) protection = 20;
-        else if (entities.allies.length > 2) protection = 10;
+        // Calculate Protection % (Include permanent shield reduction)
+        let protection = Math.round(this.permDamageReduction * 100);
+        if (entities.allies.length === 6) protection += 20;
+        else if (entities.allies.length > 2) protection += 10;
         if (this.damageReductionTimer > 0) protection += 30;
 
         return {
@@ -716,18 +720,25 @@ class Player {
         const scale = Math.pow(1.6, gameState.level - 1);
         let totalDmg = amt * scale;
 
+        let reductionMult = 1.0;
+
         // Task 6: Shield/Skill 30% damage reduction
         if (this.damageReductionTimer > 0) {
-            totalDmg *= 0.7;
+            reductionMult *= 0.7;
         }
 
         // New: Ally based damage reduction
         // >2 allies = 10% reduction, 6 allies = 20% reduction
         if (entities.allies.length === 6) {
-            totalDmg *= 0.8;
+            reductionMult *= 0.8;
         } else if (entities.allies.length > 2) {
-            totalDmg *= 0.9;
+            reductionMult *= 0.9;
         }
+
+        // Permanent Shield reduction (5% per pick, max 40%)
+        reductionMult *= (1 - Math.min(0.4, this.permDamageReduction));
+
+        totalDmg *= reductionMult;
 
         // Task 5: Shield logic (250 + 10% max HP)
         if (this.shield > 0) {
@@ -1037,7 +1048,8 @@ class Enemy {
         }
 
         this.fireTimer += dt;
-        let levelFireBonus = (gameState.level - 1) * 0.13; // +3% from before (0.1 -> 0.13)
+        // Task: Cap fire rate bonus at Level 10
+        let levelFireBonus = (Math.min(10, gameState.level) - 1) * 0.13; // +3% from before (0.1 -> 0.13)
         const baseFireRate = 4000 / (1 + (gameState.difficulty - 1) * 0.3); // Increased 20% speed (5000 * 0.8 = 4000)
         let fireRate = Math.max(640, baseFireRate / (1 + levelFireBonus)); // min 800 * 0.8 = 640
 
@@ -1324,8 +1336,8 @@ class Boss {
 
         this.fireTimer += dt;
         
-        // Task: Boss fire rate 0.6/s (~1667ms)
-        const bossFireRate = 2000 / (1 + gameState.bossCount * 0.2);
+        // Task: Boss fire rate 0.6/s (~1667ms), cap at Level 10 (which is Boss 10)
+        const bossFireRate = 2000 / (1 + Math.min(9, gameState.bossCount) * 0.2);
         let finalFireRate = this.isSuper ? bossFireRate * 0.7 : bossFireRate;
         finalFireRate = Math.max(1667, finalFireRate); 
 
@@ -1673,6 +1685,7 @@ function togglePause() {
             if (entities.allies.length === 6) perks.push({text: 'Guardian', detail: '-20% Damage', color: 'bg-indigo-600'});
             if (gameState.bossCount > 0) perks.push({text: `Boss Slayer`, detail: `+${gameState.bossCount*15}% HP`, color: 'bg-red-600'});
             if (player.damageReductionTimer > 0) perks.push({text: 'Shielding', detail: '-30% Damage', color: 'bg-blue-400'});
+            if (player.permDamageReduction > 0) perks.push({text: 'Eternal Shield', detail: `-${Math.round(player.permDamageReduction * 100)}% DMG`, color: 'bg-amber-600'});
             
             perks.forEach(p => {
                 const badge = document.createElement('div');
@@ -1687,6 +1700,13 @@ function togglePause() {
     } else {
         screen.classList.remove('flex');
         screen.classList.add('hidden');
+        // Force layout reset on resume to catch any mobile viewport shifts
+        window.scrollTo(0, 0);
+        const container = document.getElementById('canvas-container');
+        if (container) {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
     }
 }
 
@@ -1778,8 +1798,8 @@ function update(dt) {
     if (gameState.score >= 150) spawnBase = 1800;
 
     // Task: Dynamic mob limits
-    // Normal mode: Random cap 3-6 | Boss fight: Max 6 Medium units
-    let mobCap = gameState.isBossFight ? 6 : (3 + (Math.floor(gameState.score / 800) % 4));
+    // Normal mode: Random cap 3-6 | Boss fight: Max 2 Medium units during boss
+    let mobCap = gameState.isBossFight ? 2 : (3 + (Math.floor(gameState.score / 800) % 4));
     
     if (spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
         if (entities.enemies.length < mobCap) {
@@ -1951,13 +1971,15 @@ function update(dt) {
                     entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops-1)/2) * 40, entities.boss.y, type));
                 }
 
-                // Boss death spawns minions
-                for (let i = 0; i < 5; i++) {
-                    entities.enemies.push(new Enemy(entities.boss.x + (i - 2) * 50, entities.boss.y, 'small'));
+                // Boss death spawns minions (Limit based on level breakpoints: 1,3,5,7,9, Max 5)
+                const deadBossMinions = Math.min(5, 1 + Math.floor(gameState.bossCount / 2));
+                for (let i = 0; i < deadBossMinions; i++) {
+                    entities.enemies.push(new Enemy(entities.boss.x + (i - (deadBossMinions-1)/2) * 80, entities.boss.y + 50, 'medium'));
                 }
-                for (let i = 0; i < 3; i++) {
-                    entities.enemies.push(new Enemy(entities.boss.x + (i - 1) * 80, entities.boss.y + 50, 'medium'));
-                }
+                
+                // NEW: Excitement Buff (Double fire rate for 2s)
+                player.hasteTimer = 2000;
+                playSound('levelUp'); // Use levelUp sound for excitement feedback
                 
                 gameState.isBossFight = false;
                 
@@ -2133,6 +2155,12 @@ function update(dt) {
                 // Task 6: Shield buff 2s resistance + 5% HP power
                 player.shield = 250 + player.maxHp * 0.15; // Increased power (+5%)
                 player.damageReductionTimer = 2000; // 2s resistance
+                
+                // NEW: Permanent 5% Damage Reduction (Max 40%)
+                if (player.permDamageReduction < 0.4) {
+                    player.permDamageReduction = Math.min(0.4, player.permDamageReduction + 0.05);
+                }
+                playSound('powerup');
             }
             entities.powerUps.splice(pi, 1); updateUI();
         }
@@ -2291,11 +2319,32 @@ function setupEventListeners() {
     const resize = () => {
         const container = document.getElementById('canvas-container');
         if (container) {
+            // Use visualViewport if available for more stability on mobile browsers with dynamic bars
+            const w = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+            const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+            
+            // On mobile, explicitly set body height to prevent jumpy layout with dvh
+            if (gameState.isMobile) {
+                document.body.style.height = h + 'px';
+                container.style.height = h + 'px';
+            }
+
             canvas.width = container.clientWidth;
             canvas.height = container.clientHeight;
+            
+            // Always scroll to top on resize to prevent browser-level shifts
+            window.scrollTo(0, 0);
         }
     };
     window.addEventListener('resize', resize);
+    window.addEventListener('focus', () => {
+        window.scrollTo(0, 0);
+        resize();
+    });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', resize);
+        window.visualViewport.addEventListener('scroll', () => window.scrollTo(0, 0));
+    }
     resize();
 
     // Start Button Logic (New Game)
@@ -2306,6 +2355,8 @@ function setupEventListeners() {
             initAudio();
             gameState.isStarted = true;
             document.getElementById('start-screen').classList.add('hidden');
+            window.scrollTo(0, 0);
+            resize();
         });
     }
 
@@ -2317,6 +2368,8 @@ function setupEventListeners() {
                 initAudio();
                 gameState.isStarted = true;
                 document.getElementById('start-screen').classList.add('hidden');
+                window.scrollTo(0, 0);
+                resize();
             }
         });
     }
@@ -2335,6 +2388,18 @@ function setupEventListeners() {
     if (closeSettings) {
         closeSettings.addEventListener('click', () => {
             settingsScreen.classList.add('hidden');
+        });
+    }
+
+    // Restart Button Logic (Game Over)
+    const restartBtn = document.getElementById('restart-btn');
+    if (restartBtn) {
+        restartBtn.addEventListener('click', () => {
+            // First scroll to top and force layout reset before reloading
+            window.scrollTo(0, 0);
+            setTimeout(() => {
+                location.reload();
+            }, 50);
         });
     }
 
@@ -2512,7 +2577,8 @@ function saveGame() {
             maxHp: player.maxHp,
             level: player.level,
             damageMultiplier: player.damageMultiplier,
-            bossKillDamageBonus: player.bossKillDamageBonus
+            bossKillDamageBonus: player.bossKillDamageBonus,
+            permDamageReduction: player.permDamageReduction
         },
         allyCount: entities.allies.length
     };
@@ -2535,6 +2601,7 @@ function loadGame() {
         player.level = data.player.level;
         player.damageMultiplier = data.player.damageMultiplier;
         player.bossKillDamageBonus = data.player.bossKillDamageBonus;
+        player.permDamageReduction = data.player.permDamageReduction || 0;
         
         // Restore Allies
         entities.allies = [];
