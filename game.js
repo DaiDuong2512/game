@@ -1623,14 +1623,16 @@ function updateUI() {
     }
 
     // Update Mini Stats
-    const stats = player.getStats();
-    const miniSpeed = document.getElementById('mini-speed');
-    const miniDamage = document.getElementById('mini-damage');
-    const miniAlly = document.getElementById('mini-ally');
-    if (miniSpeed) miniSpeed.innerText = stats.shotsPerSec + '/s';
-    if (miniDamage) miniDamage.innerText = formatNumber(stats.finalDmg);
-    if (miniDef) miniDef.innerText = stats.protection + '%';
-    if (miniAlly) miniAlly.innerText = stats.allyDamagePercent + '%';
+    const gameStats = player.getStats();
+    const elSpeed = document.getElementById('mini-speed');
+    const elDamage = document.getElementById('mini-damage');
+    const elDef = document.getElementById('mini-def');
+    const elAlly = document.getElementById('mini-ally');
+    
+    if (elSpeed) elSpeed.innerText = gameStats.shotsPerSec + '/s';
+    if (elDamage) elDamage.innerText = formatNumber(gameStats.finalDmg);
+    if (elDef) elDef.innerText = gameStats.protection + '%';
+    if (elAlly) elAlly.innerText = gameStats.allyDamagePercent + '%';
 }
 
 function gameOver() {
@@ -2230,6 +2232,7 @@ function preload() {
 
     const checkComplete = () => {
         loaded++;
+
         console.log(`Asset loaded: ${loaded}/${totalImages}`);
         if (loadingBar) {
             loadingBar.style.width = (loaded / totalImages * 100) + '%';
