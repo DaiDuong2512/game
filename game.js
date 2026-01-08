@@ -157,8 +157,183 @@ const entities = {
     explosions: [],
     powerUps: [],
     allies: [],
+    damageNumbers: [],
     boss: null
 };
+
+const TEXTURES = {};
+
+function prerender() {
+    console.log("Starting GPU optimization (prerendering textures)...");
+
+    // --- Prerender Bullets (GPU Texture Batching) ---
+    const bulletTypes = [
+        { name: 'yellow', color: '#fbbf24', radius: 4 },
+        { name: 'green', color: '#22c55e', radius: 4 },
+        { name: 'blue', color: '#3b82f6', radius: 4 },
+        { name: 'red', color: '#ef4444', radius: 4 },
+        { name: 'debuff', color: '#a855f7', radius: 10 },
+        { name: 'downgrade', color: '#ec4899', radius: 10 }
+    ];
+
+    bulletTypes.forEach(t => {
+        const canv = document.createElement('canvas');
+        const size = (t.radius + 2) * 2;
+        canv.width = size;
+        canv.height = size;
+        const c = canv.getContext('2d');
+        const center = size / 2;
+
+        const grad = c.createRadialGradient(center, center, 1, center, center, t.radius);
+        grad.addColorStop(0, '#fff');
+        grad.addColorStop(1, t.color);
+        c.fillStyle = grad;
+        c.beginPath();
+        c.arc(center, center, t.radius, 0, Math.PI * 2);
+        c.fill();
+        TEXTURES['bullet_' + t.name] = canv;
+
+        // Long version for allies
+        const lCanv = document.createElement('canvas');
+        lCanv.width = Math.floor(t.radius * 5);
+        lCanv.height = Math.floor(t.radius * 2 + 2);
+        const lc = lCanv.getContext('2d');
+        lc.fillStyle = t.color;
+
+        // Horizontal pill shape for rotation
+        lc.beginPath();
+        const r = (lCanv.height - 2) / 2;
+        lc.roundRect(0, 1, lCanv.width, lCanv.height - 2, r);
+        lc.fill();
+
+        // Add a small core to long bullets
+        lc.fillStyle = '#fff';
+        lc.beginPath();
+        lc.roundRect(lCanv.width * 0.2, lCanv.height * 0.3, lCanv.width * 0.6, lCanv.height * 0.4, r);
+        lc.fill();
+
+        TEXTURES['bullet_long_' + t.name] = lCanv;
+    });
+
+    // --- Prerender PowerUps (Avoid shadowBlur in loop) ---
+    const types = ['W', 'H', 'A', 'B', 'U', 'S'];
+    const colors = { W: '#22c55e', H: '#f43f5e', A: '#3b82f6', B: '#f97316', U: '#a855f7', S: '#06b6d4' };
+
+    types.forEach(type => {
+        const canv = document.createElement('canvas');
+        canv.width = 80; // Extra room for glow
+        canv.height = 80;
+        const c = canv.getContext('2d');
+        const color = colors[type];
+
+        c.translate(40, 40);
+
+        // Draw glow (Cheap GPU-friendly circle instead of shadowBlur)
+        const glow = c.createRadialGradient(0, 0, 5, 0, 0, 30);
+        glow.addColorStop(0, color);
+        glow.addColorStop(1, 'transparent');
+        c.fillStyle = glow;
+        c.globalAlpha = 0.4;
+        c.beginPath();
+        c.arc(0, 0, 30, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = 1.0;
+
+        c.fillStyle = color;
+        c.strokeStyle = '#fff';
+        c.lineWidth = 1;
+
+        // Simplified path drawing
+        switch (type) {
+            case 'W': // Wrench
+                c.beginPath(); c.arc(0, -6, 5, 0, Math.PI * 2); c.rect(-3, -6, 6, 14); c.fill();
+                break;
+            case 'H': // Heart
+                c.beginPath(); c.moveTo(0, 5); c.bezierCurveTo(-10, -5, -10, -15, 0, -10); c.bezierCurveTo(10, -15, 10, -5, 0, 5); c.fill();
+                break;
+            case 'A': // Ally
+                c.beginPath(); c.moveTo(0, -10); c.lineTo(-8, 8); c.lineTo(0, 3); c.lineTo(8, 8); c.fill();
+                break;
+            case 'B': // Boost/Boom (Flame)
+                c.beginPath();
+                c.moveTo(0, 12);
+                c.bezierCurveTo(-10, 10, -10, -2, -2, -6);
+                c.bezierCurveTo(-6, -12, 0, -15, 0, -15);
+                c.bezierCurveTo(0, -15, 6, -12, 2, -6);
+                c.bezierCurveTo(10, -2, 10, 10, 0, 12);
+                c.fill();
+                break;
+            case 'U': // Upgrade (Arrow)
+                c.beginPath();
+                c.moveTo(0, -14); // Tip
+                c.lineTo(-10, -2); // Left wing
+                c.lineTo(-4, -2); // Left neck
+                c.lineTo(-4, 12); // Bottom left
+                c.lineTo(4, 12); // Bottom right
+                c.lineTo(4, -2); // Right neck
+                c.lineTo(10, -2); // Right wing
+                c.closePath();
+                c.fill();
+                break;
+            case 'S': // Shield icon
+                c.beginPath(); c.moveTo(0, -10); c.lineTo(8, -6); c.lineTo(8, 2); c.quadraticCurveTo(8, 8, 0, 11); c.quadraticCurveTo(-8, 8, -8, 2); c.lineTo(-8, -6); c.fill();
+                break;
+        }
+        TEXTURES['powerup_' + type] = canv;
+    });
+
+    // --- Prerender Shield ---
+    const shieldCanv = document.createElement('canvas');
+    shieldCanv.width = 120; shieldCanv.height = 120;
+    const sc = shieldCanv.getContext('2d');
+    sc.beginPath();
+    sc.arc(60, 60, 55, 0, Math.PI * 2);
+    sc.strokeStyle = 'rgba(56, 189, 248, 0.8)';
+    sc.lineWidth = 3;
+    sc.stroke();
+    sc.fillStyle = 'rgba(56, 189, 248, 0.1)';
+    sc.fill();
+    TEXTURES['player_shield'] = shieldCanv;
+
+    // --- Prerender Missile (GPU Offload) ---
+    const missileCanv = document.createElement('canvas');
+    missileCanv.width = 60; missileCanv.height = 60;
+    const mc = missileCanv.getContext('2d');
+    mc.translate(30, 30);
+    const fGrad = mc.createRadialGradient(0, 0, 5, 0, 0, 25);
+    fGrad.addColorStop(0, '#f97316');
+    fGrad.addColorStop(1, 'transparent');
+    mc.fillStyle = fGrad;
+    mc.beginPath(); mc.arc(0, 0, 25, 0, Math.PI * 2); mc.fill();
+    mc.fillStyle = '#f59e0b';
+    mc.beginPath(); mc.moveTo(0, -15); mc.lineTo(-8, 5); mc.lineTo(0, 15); mc.lineTo(8, 5); mc.closePath(); mc.fill();
+    TEXTURES['missile_tex'] = missileCanv;
+}
+
+class DamageNumber {
+    constructor(x, y, amount, isCrit = false) {
+        this.x = x;
+        this.y = y;
+        this.amount = Math.ceil(amount);
+        this.isCrit = isCrit;
+        this.life = 500; // 0.5s
+        this.maxLife = 500;
+        this.vy = -1.5;
+    }
+    update(dt) {
+        this.life -= dt;
+        this.y += this.vy;
+    }
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.life / this.maxLife;
+        ctx.fillStyle = this.isCrit ? '#facc15' : '#fff';
+        ctx.font = this.isCrit ? 'bold 20px sans-serif' : '16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(this.amount, this.x, this.y);
+        ctx.restore();
+    }
+}
 
 /**
  * CLASSES
@@ -232,20 +407,34 @@ class Ally {
     }
 
     findNearestEnemy() {
-        let minD = Infinity;
+        let minDSq = Infinity;
         let potential = null;
-        [...entities.enemies, entities.boss].forEach(e => {
-            if (e) {
-                const d = Math.hypot(e.x - this.x, e.y - this.y);
-                if (d < minD) { minD = d; potential = e; }
-            }
-        });
+
+        // Optimize: use for loops instead of [...]forEach
+        for (let i = 0; i < entities.enemies.length; i++) {
+            const e = entities.enemies[i];
+            const dx = e.x - this.x;
+            const dy = e.y - this.y;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < minDSq) { minDSq = dSq; potential = e; }
+        }
+
+        if (entities.boss) {
+            const e = entities.boss;
+            const dx = e.x - this.x;
+            const dy = e.y - this.y;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < minDSq) { minDSq = dSq; potential = e; }
+        }
+
         this.target = potential;
     }
 
     draw() {
+        const floorX = Math.floor(this.x);
+        const floorY = Math.floor(this.y);
         ctx.save();
-        ctx.translate(this.x, this.y);
+        ctx.translate(floorX, floorY);
 
         // Ally appearance (straightened)
         ctx.drawImage(images.ally, -10, -10, 20, 20);
@@ -352,10 +541,18 @@ class Player {
             gameState.weaponTier = 1;
             this.level = 0;
             count = 1;
+            // Upgrade Buff: Add ally if less than 2
+            if (entities.allies.length < 2) {
+                entities.allies.push(new Ally(player, entities.allies.length));
+            }
         } else if (gameState.weaponTier === 1 && count > 5) {
             gameState.weaponTier = 2;
             this.level = 0;
             count = 1;
+            // Upgrade Buff: Add ally if less than 2
+            if (entities.allies.length < 2) {
+                entities.allies.push(new Ally(player, entities.allies.length));
+            }
         }
         count = Math.min(count, 5);
 
@@ -384,17 +581,11 @@ class Player {
 
     draw() {
         ctx.save();
-        ctx.translate(this.x, this.y);
+        ctx.translate(Math.floor(this.x), Math.floor(this.y));
 
-        // Task 5: Shield visual (Reduced to cover only player)
-        if (this.shield > 0) {
-            ctx.beginPath();
-            ctx.arc(0, 0, 55, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
-            ctx.fill();
+        // GPU Offloading: Use prerendered shield texture
+        if (this.shield > 0 && TEXTURES.player_shield) {
+            ctx.drawImage(TEXTURES.player_shield, -60, -60);
         }
 
         ctx.rotate(this.tilt);
@@ -434,44 +625,28 @@ class Bullet {
     }
 
     draw() {
-        ctx.save();
-        ctx.beginPath();
-        if (this.isDebuff || this.isDowngrade) {
-            const grad = ctx.createRadialGradient(this.x, this.y, 2, this.x, this.y, this.radius);
-            grad.addColorStop(0, '#fff');
-            grad.addColorStop(1, this.isDowngrade ? '#ec4899' : '#a855f7');
-            ctx.fillStyle = grad;
-        } else {
-            let color = '#fbbf24'; // Default Yellow
-            if (!this.isEnemy) {
-                if (this.tier === 1) color = '#22c55e'; // Green
-                if (this.tier === 2) color = '#3b82f6'; // Blue
-                ctx.globalAlpha = 1.0;
-            } else {
-                color = '#ef4444'; // Enemy Red
-            }
-
-            ctx.fillStyle = color;
-
-            // Add a bright core for player bullets
-            if (!this.isEnemy) {
-                const grad = ctx.createRadialGradient(this.x, this.y, 1, this.x, this.y, this.radius);
-                grad.addColorStop(0, '#fff');
-                grad.addColorStop(1, color);
-                ctx.fillStyle = grad;
-            }
+        // GPU Offloading: Use drawImage for textures
+        let tex = null;
+        if (this.isDebuff) tex = TEXTURES.bullet_debuff;
+        else if (this.isDowngrade) tex = TEXTURES.bullet_downgrade;
+        else if (this.isEnemy) tex = TEXTURES.bullet_red;
+        else {
+            const colors = ['yellow', 'green', 'blue'];
+            const name = colors[this.tier] || 'yellow';
+            tex = this.isLong ? TEXTURES['bullet_long_' + name] : TEXTURES['bullet_' + name];
         }
+
+        if (!tex) return;
 
         if (this.isLong) {
+            ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(Math.atan2(this.vy, this.vx));
-            ctx.roundRect(-this.radius * 2.5, -this.radius, this.radius * 5, this.radius * 2, this.radius);
-            ctx.fill();
+            ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+            ctx.restore();
         } else {
-            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.drawImage(tex, Math.floor(this.x - tex.width / 2), Math.floor(this.y - tex.height / 2));
         }
-        ctx.restore();
     }
 }
 
@@ -571,12 +746,13 @@ class Enemy {
     draw() {
         ctx.save();
         const img = this.type === 'small' ? images.enemySmall : images.enemyMedium;
-        ctx.drawImage(img, this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+        // GPU: drawImage with integer coords
+        ctx.drawImage(img, Math.floor(this.x - this.width / 2), Math.floor(this.y - this.height / 2), this.width, this.height);
 
         // Shield visual - only during active dash/protection
         if (this.entryTimer < 800 && this.y < canvas.height / 8) {
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.width * 0.8, 0, Math.PI * 2);
+            ctx.arc(Math.floor(this.x), Math.floor(this.y), this.width * 0.8, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
             ctx.lineWidth = 2;
             ctx.stroke();
@@ -586,29 +762,32 @@ class Enemy {
 }
 
 class Missile {
-    constructor(x, y) {
+    constructor(x, y, initialTarget = null) {
         this.x = x;
         this.y = y;
         this.speed = 7.2; // 20% slower than player bullet (9 * 0.8 = 7.2)
-        this.target = null;
+        this.target = initialTarget;
         this.bounces = 0;
         this.hitTargets = new Set();
         this.width = 45;
         this.height = 45;
         this.angle = -Math.PI / 2;
-        this.findTarget();
+        if (!this.target) this.findTarget();
     }
 
     findTarget() {
         if (entities.boss) { this.target = entities.boss; return; }
-        let minD = Infinity;
+        let minDSq = Infinity;
         let potential = null;
-        entities.enemies.forEach(e => {
+        for (let i = 0; i < entities.enemies.length; i++) {
+            const e = entities.enemies[i];
             if (!this.hitTargets.has(e)) {
-                const d = Math.hypot(e.x - this.x, e.y - this.y);
-                if (d < minD) { minD = d; potential = e; }
+                const dx = e.x - this.x;
+                const dy = e.y - this.y;
+                const dSq = dx * dx + dy * dy;
+                if (dSq < minDSq) { minDSq = dSq; potential = e; }
             }
-        });
+        }
         this.target = potential;
     }
 
@@ -631,7 +810,9 @@ class Missile {
         this.y += Math.sin(this.angle) * this.speed * timeFactor;
 
         if (this.target) {
-            if (Math.hypot(this.target.x - this.x, this.target.y - this.y) < 40) {
+            const dx = this.target.x - this.x;
+            const dy = this.target.y - this.y;
+            if (dx * dx + dy * dy < 1600) { // 40^2 = 1600
                 this.hit(this.target);
             }
         }
@@ -645,14 +826,16 @@ class Missile {
         // Boom heal on hit as requested
         player.hp = Math.min(player.maxHp, player.hp + 50);
 
+        let finalDamage = missileDmg;
         if (target === entities.boss) {
-            target.hp -= missileDmg * 5; // Boss multiplier for missiles remains higher but scales
+            finalDamage = missileDmg * 5;
+            target.hp -= finalDamage;
             this.bounces = gameState.maxMissileBounces; // Force stop after boss hit
             if (target.hp <= 0) {
                 player.hp = Math.min(player.maxHp, player.hp + 100);
             }
         } else {
-            target.hp -= missileDmg;
+            target.hp -= finalDamage;
             if (target.hp <= 0) {
                 killEnemy(target);
             } else {
@@ -660,6 +843,10 @@ class Missile {
                 createExplosion(this.x, this.y);
             }
         }
+
+        // Show damage number for missile (treat as crit color)
+        entities.damageNumbers.push(new DamageNumber(this.x, this.y - 20, finalDamage, true));
+
         this.hitTargets.add(target);
         this.bounces++;
         if (this.bounces < gameState.maxMissileBounces) {
@@ -670,12 +857,13 @@ class Missile {
     }
 
     draw() {
+        const tex = TEXTURES.missile_tex;
+        if (!tex) return;
         ctx.save();
-        ctx.translate(this.x, this.y);
+        ctx.translate(Math.floor(this.x), Math.floor(this.y));
         ctx.rotate(this.angle + Math.PI / 2);
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = '#f97316';
-        ctx.drawImage(images.missile, -this.width / 2, -this.height / 2, this.width, this.height);
+        // GPU: Using prerendered missile texture
+        ctx.drawImage(tex, -30, -30);
         ctx.restore();
     }
 }
@@ -741,12 +929,13 @@ class Boss {
         // Super Boss HP Threshold Checks
         if (this.isSuper) {
             const currentHpPercent = this.hp / this.maxHp;
-            this.thresholds.forEach(t => {
+            for (let i = 0; i < this.thresholds.length; i++) {
+                const t = this.thresholds[i];
                 if (currentHpPercent <= t && !this.triggeredThresholds.has(t)) {
                     this.fireDowngradeWave();
                     this.triggeredThresholds.add(t);
                 }
-            });
+            }
         }
 
         this.fireTimer += dt;
@@ -795,9 +984,9 @@ class Boss {
         ctx.fillStyle = "white";
         ctx.font = "bold 10px Inter";
         ctx.textAlign = "center";
-        ctx.fillText(`${Math.ceil(this.hp)} / ${this.maxHp}`, canvas.width / 2, barY - 5);
+        ctx.fillText(`${Math.ceil(this.hp)} / ${this.maxHp}`, Math.floor(canvas.width / 2), barY - 5);
 
-        ctx.drawImage(images.boss, this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+        ctx.drawImage(images.boss, Math.floor(this.x - this.width / 2), Math.floor(this.y - this.height / 2), this.width, this.height);
         ctx.restore();
     }
 }
@@ -809,101 +998,16 @@ class PowerUp {
     }
     update(dt) { this.y += 2.2 * (dt / 16.6); }
 
-    drawIcon(color) {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.scale(0.8, 0.8);
-        ctx.fillStyle = '#fff';
-
-        switch (this.type) {
-            case 'W': // Weapon - Triple Bullet icon
-                for (let i = -1; i <= 1; i++) {
-                    ctx.beginPath();
-                    ctx.roundRect(i * 6 - 2, -8, 4, 16, 2);
-                    ctx.fill();
-                }
-                break;
-            case 'H': // Health - Heart
-                ctx.beginPath();
-                ctx.moveTo(0, 8);
-                ctx.bezierCurveTo(-10, 0, -10, -12, 0, -6);
-                ctx.bezierCurveTo(10, -12, 10, 0, 0, 8);
-                ctx.fill();
-                break;
-            case 'A': // Ally - Star
-                ctx.beginPath();
-                for (let i = 0; i < 5; i++) {
-                    ctx.lineTo(Math.cos((18 + i * 72) / 180 * Math.PI) * 10,
-                        Math.sin((18 + i * 72) / 180 * Math.PI) * 10);
-                    ctx.lineTo(Math.cos((54 + i * 72) / 180 * Math.PI) * 5,
-                        Math.sin((54 + i * 72) / 180 * Math.PI) * 5);
-                }
-                ctx.closePath();
-                ctx.fill();
-                break;
-            case 'B': // Boost/Boom - Flame
-                ctx.beginPath();
-                ctx.moveTo(0, 10);
-                ctx.quadraticCurveTo(-8, 5, -5, -2);
-                ctx.quadraticCurveTo(-10, -5, 0, -12);
-                ctx.quadraticCurveTo(10, -5, 5, -2);
-                ctx.quadraticCurveTo(8, 5, 0, 10);
-                ctx.fill();
-                break;
-            case 'U': // Upgrade - Lightning
-                ctx.beginPath();
-                ctx.moveTo(2, -10);
-                ctx.lineTo(-6, 2);
-                ctx.lineTo(0, 2);
-                ctx.lineTo(-2, 10);
-                ctx.lineTo(6, -2);
-                ctx.lineTo(0, -2);
-                ctx.closePath();
-                ctx.fill();
-                break;
-            case 'S': // Shield
-                ctx.beginPath();
-                ctx.moveTo(0, -10);
-                ctx.lineTo(8, -6);
-                ctx.lineTo(8, 2);
-                ctx.quadraticCurveTo(8, 8, 0, 11);
-                ctx.quadraticCurveTo(-8, 8, -8, 2);
-                ctx.lineTo(-8, -6);
-                ctx.closePath();
-                ctx.fill();
-                break;
-        }
-        ctx.restore();
-    }
-
     draw() {
-        ctx.save();
-        let color = '#22c55e';
-        if (this.type === 'H') color = '#f43f5e';
-        if (this.type === 'A') color = '#3b82f6';
-        if (this.type === 'B') color = '#f97316';
-        if (this.type === 'U') color = '#a855f7';
-        if (this.type === 'S') color = '#06b6d4';
-
-        // Outer Glow
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = color;
-        ctx.fillStyle = color;
-
-        // Sphere with gradient
-        const grad = ctx.createRadialGradient(this.x - 5, this.y - 5, 2, this.x, this.y, this.radius);
-        grad.addColorStop(0, color);
-        grad.addColorStop(1, 'rgba(0,0,0,0.5)');
-        ctx.fillStyle = grad;
-
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Overlay Icon
-        this.drawIcon(color);
-
-        ctx.restore();
+        const tex = TEXTURES['powerup_' + this.type];
+        if (tex) {
+            // GPU: drawImage is much faster than path calculations + shadowBlur
+            ctx.drawImage(tex, Math.floor(this.x - 40), Math.floor(this.y - 40));
+        } else {
+            // Minimal fallback
+            ctx.fillStyle = "#fff";
+            ctx.beginPath(); ctx.arc(Math.floor(this.x), Math.floor(this.y), 10, 0, Math.PI * 2); ctx.fill();
+        }
     }
 }
 
@@ -914,7 +1018,8 @@ class Explosion {
     update(dt) { this.life -= dt; }
     draw() {
         ctx.globalAlpha = this.life / 600;
-        ctx.drawImage(images.explosion, this.x - 60, this.y - 60, 120, 120);
+        // GPU: Integer coordinates for better performance
+        ctx.drawImage(images.explosion, Math.floor(this.x - 60), Math.floor(this.y - 60), 120, 120);
         ctx.globalAlpha = 1.0;
     }
 }
@@ -962,17 +1067,34 @@ function spawnEnemy() {
 function fireMissile() {
     if (!gameState.isStarted || gameState.isPaused || gameState.isGameOver) return;
     if (gameState.boomCharges > 0) {
-        entities.missiles.push(new Missile(player.x, player.y));
-        gameState.boomCharges = 0; // No stacking, consuming it
+        // Boom Upgrade: More missiles based on bullet count (level)
+        const bulletCount = Math.floor(player.level * 2 + 1);
+        const extraMissiles = Math.floor(bulletCount / 2);
+        const totalMissiles = 1 + extraMissiles;
+
+        // Smart targeting: Try to assign unique targets to each missile
+        const availableTargets = [...entities.enemies];
+        if (entities.boss) availableTargets.push(entities.boss);
+
+        for (let i = 0; i < totalMissiles; i++) {
+            let target = null;
+            if (availableTargets.length > 0) {
+                const targetIdx = Math.floor(Math.random() * availableTargets.length);
+                target = availableTargets.splice(targetIdx, 1)[0];
+            }
+            entities.missiles.push(new Missile(player.x, player.y, target));
+        }
+
+        gameState.boomCharges = 0;
         gameState.boomTimer = 0;
         playSound('explosion');
 
-        // Task 9: Allies have 50% chance to fire bomb
-        entities.allies.forEach(ally => {
+        // Task 9: Allies 50% chance to fire bomb
+        for (let i = 0; i < entities.allies.length; i++) {
             if (Math.random() < 0.5) {
-                entities.missiles.push(new Missile(ally.x, ally.y));
+                entities.missiles.push(new Missile(entities.allies[i].x, entities.allies[i].y));
             }
-        });
+        }
         updateUI();
     }
 }
@@ -1093,6 +1215,15 @@ function update(dt) {
     if (!gameState.isBossFight && gameState.score >= gameState.nextBossScore) {
         gameState.isBossFight = true;
 
+        // Buff Boss: 1 Shield + 2 Allies (if < 5)
+        player.shield = Math.max(player.shield, 150 + player.maxHp * 0.1);
+        const addAllies = 2;
+        for (let i = 0; i < addAllies; i++) {
+            if (entities.allies.length < 5) {
+                entities.allies.push(new Ally(player, entities.allies.length));
+            }
+        }
+
         // Task: Spawn 3 + Level medium minions along with boss
         const minionCount = 3 + gameState.level;
         for (let i = 0; i < minionCount; i++) {
@@ -1116,47 +1247,74 @@ function update(dt) {
         setTimeout(() => warn.classList.add('hidden'), 4000);
     }
 
-    // Entities Updates
-    entities.bullets.forEach(e => e.update(dt));
-    entities.enemyBullets.forEach(e => e.update(dt));
-    entities.enemies.forEach(e => e.update(dt));
-    entities.missiles.forEach(e => e.update(dt));
-    entities.explosions.forEach(e => e.update(dt));
-    entities.powerUps.forEach(e => e.update(dt));
-    entities.allies.forEach(e => e.update(dt));
+    // Entities Updates (Using for loops for speed)
+    for (let i = 0; i < entities.bullets.length; i++) entities.bullets[i].update(dt);
+    for (let i = 0; i < entities.enemyBullets.length; i++) entities.enemyBullets[i].update(dt);
+    for (let i = 0; i < entities.enemies.length; i++) entities.enemies[i].update(dt);
+    for (let i = 0; i < entities.missiles.length; i++) entities.missiles[i].update(dt);
+    for (let i = 0; i < entities.explosions.length; i++) entities.explosions[i].update(dt);
+    for (let i = 0; i < entities.powerUps.length; i++) entities.powerUps[i].update(dt);
+    for (let i = 0; i < entities.allies.length; i++) entities.allies[i].update(dt);
     if (entities.boss) entities.boss.update(dt);
+    for (let i = entities.damageNumbers.length - 1; i >= 0; i--) {
+        const dn = entities.damageNumbers[i];
+        dn.update(dt);
+        if (dn.life <= 0) entities.damageNumbers.splice(i, 1);
+    }
 
-    // Collisions (Optimized)
+    // Collisions (Accumulated Damage & Crit Logic)
+    const frameHits = new Map();
+
     for (let bi = entities.bullets.length - 1; bi >= 0; bi--) {
         const b = entities.bullets[bi];
-        let hit = false;
+        let hitEntity = null;
 
-        // Check enemies
         for (let ei = entities.enemies.length - 1; ei >= 0; ei--) {
             const e = entities.enemies[ei];
-            if (Math.hypot(b.x - e.x, b.y - e.y) < e.width / 2.3) {
-                if (e.takeDamage) e.takeDamage(b.damage);
-                else e.hp -= b.damage;
-                hit = true;
-                if (e.hp <= 0) {
-                    killEnemy(e);
-                    updateUI();
-                }
+            const dx = b.x - e.x;
+            const dy = b.y - e.y;
+            const r = e.width / 2.3;
+            if (dx * dx + dy * dy < r * r) {
+                hitEntity = e;
                 break;
             }
         }
 
-        if (hit) {
-            entities.bullets.splice(bi, 1);
-            continue;
+        if (!hitEntity && entities.boss) {
+            const dx = b.x - entities.boss.x;
+            const dy = b.y - entities.boss.y;
+            const r = entities.boss.width / 3.5;
+            if (dx * dx + dy * dy < r * r) {
+                hitEntity = entities.boss;
+            }
         }
 
-        // Check boss
-        if (entities.boss && Math.hypot(b.x - entities.boss.x, b.y - entities.boss.y) < entities.boss.width / 3.5) {
-            entities.boss.hp -= b.damage;
+        if (hitEntity) {
+            let data = frameHits.get(hitEntity);
+            if (!data) {
+                data = { dmg: 0, count: 0, x: hitEntity.x, y: hitEntity.y };
+                frameHits.set(hitEntity, data);
+            }
+            data.dmg += b.damage;
+            data.count++;
             entities.bullets.splice(bi, 1);
-            if (entities.boss.hp <= 0) {
-                createExplosion(entities.boss.x, entities.boss.y, true); // Boss death = Shake
+        }
+    }
+
+    // Process Accumulated Damage
+    for (const [entity, data] of frameHits) {
+        let finalDmg = data.dmg;
+        let isCrit = data.count > 1;
+        if (isCrit) finalDmg *= 1.45;
+
+        if (entity.takeDamage) entity.takeDamage(finalDmg);
+        else entity.hp -= finalDmg;
+
+        entities.damageNumbers.push(new DamageNumber(data.x, data.y - 20, finalDmg, isCrit));
+
+        if (entity.hp <= 0) {
+            if (entity === entities.boss) {
+                createExplosion(entities.boss.x, entities.boss.y, true);
                 gameState.score += 2000;
                 gameState.bossCount++;
                 gameState.nextBossScore = gameState.score + 3000 + (gameState.bossCount * 1000);
@@ -1164,19 +1322,27 @@ function update(dt) {
                 gameState.isBossFight = false;
                 entities.boss = null;
                 updateUI();
+            } else {
+                killEnemy(entity);
+                updateUI();
             }
         }
     }
 
-    entities.enemyBullets.forEach((eb, ebi) => {
-        // Task 5: Shield covers player/teammates nearby (Reduced radius for tighter protection)
-        if (player.shield > 0 && Math.hypot(eb.x - player.x, eb.y - player.y) < 60) {
+    for (let ebi = entities.enemyBullets.length - 1; ebi >= 0; ebi--) {
+        const eb = entities.enemyBullets[ebi];
+        const dx = eb.x - player.x;
+        const dy = eb.y - player.y;
+        const distSq = dx * dx + dy * dy;
+
+        // Task 5: Shield covers player/teammates nearby (60^2 = 3600)
+        if (player.shield > 0 && distSq < 3600) {
             player.takeDamage(80);
             entities.enemyBullets.splice(ebi, 1);
-            return;
+            continue;
         }
 
-        if (Math.hypot(eb.x - player.x, eb.y - player.y) < 22) {
+        if (distSq < 484) { // 22^2 = 484
             if (eb.isDebuff) {
                 player.slowTimer = 3500;
                 player.jammedTimer = 2500;
@@ -1199,26 +1365,46 @@ function update(dt) {
                 player.takeDamage(80);
             }
         }
-    });
+    }
 
-    entities.enemies.forEach(e => {
-        if (Math.hypot(e.x - player.x, e.y - player.y) < 35) {
+    for (let ei = entities.enemies.length - 1; ei >= 0; ei--) {
+        const e = entities.enemies[ei];
+        const dx = e.x - player.x;
+        const dy = e.y - player.y;
+
+        // Collision with player (35^2 = 1225)
+        if (dx * dx + dy * dy < 1225) {
             const dmg = e.type === 'small' ? 70 : 150;
             player.takeDamage(dmg);
             e.hp = 0;
             createExplosion(e.x, e.y, true); // Player collision = Shake
         }
-    });
 
-    entities.powerUps.forEach((p, pi) => {
-        if (Math.hypot(p.x - player.x, p.y - player.y) < 38) {
+        // Task: Penalty if enemy passes the player (reaches bottom)
+        if (e.y >= canvas.height && e.hp > 0) {
+            const dmg = e.type === 'small' ? 70 : 150;
+            player.takeDamage(dmg);
+            gameState.score = Math.max(0, gameState.score - 50); // -50 points penalty
+            e.hp = 0; // Mark as "processed" so it doesn't trigger again
+            updateUI();
+        }
+    }
+
+    for (let pi = entities.powerUps.length - 1; pi >= 0; pi--) {
+        const p = entities.powerUps[pi];
+        const dx = p.x - player.x;
+        const dy = p.y - player.y;
+
+        if (dx * dx + dy * dy < 1444) { // 38^2 = 1444
             playSound('powerup');
             if (p.type === 'W') {
                 player.level += 0.5;
             } else if (p.type === 'H') {
                 const healAmt = 200;
                 player.hp = Math.min(player.maxHp, player.hp + healAmt);
-                entities.allies.forEach(a => a.hp = Math.min(a.maxHp, a.hp + healAmt * 0.3));
+                for (let ai = 0; ai < entities.allies.length; ai++) {
+                    entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + healAmt * 0.3);
+                }
             } else if (p.type === 'A') {
                 if (entities.allies.length < 6) {
                     entities.allies.push(new Ally(player, entities.allies.length));
@@ -1236,15 +1422,43 @@ function update(dt) {
             }
             entities.powerUps.splice(pi, 1); updateUI();
         }
-    });
+    }
 
-    // Cleanup (Now removing entities immediately when they leave the screen)
-    entities.bullets = entities.bullets.filter(e => e.y > 0 && e.y < canvas.height && e.x > 0 && e.x < canvas.width);
-    entities.enemyBullets = entities.enemyBullets.filter(e => e.y > 0 && e.y < canvas.height && e.x > 0 && e.x < canvas.width);
-    entities.enemies = entities.enemies.filter(e => e.y < canvas.height && e.hp > 0);
-    entities.missiles = entities.missiles.filter(e => e.bounces < gameState.maxMissileBounces && e.y > 0 && e.y < canvas.height && e.x > 0 && e.x < canvas.width);
-    entities.explosions = entities.explosions.filter(e => e.life > 0);
-    entities.powerUps = entities.powerUps.filter(e => e.y < canvas.height);
+    // Cleanup (Optimized in-place removal to avoid GC)
+    for (let i = entities.bullets.length - 1; i >= 0; i--) {
+        const e = entities.bullets[i];
+        if (e.y <= -50 || e.y >= canvas.height + 50 || e.x <= -50 || e.x >= canvas.width + 50) {
+            entities.bullets.splice(i, 1);
+        }
+    }
+    for (let i = entities.enemyBullets.length - 1; i >= 0; i--) {
+        const e = entities.enemyBullets[i];
+        if (e.y <= -50 || e.y >= canvas.height + 50 || e.x <= -50 || e.x >= canvas.width + 50) {
+            entities.enemyBullets.splice(i, 1);
+        }
+    }
+    for (let i = entities.enemies.length - 1; i >= 0; i--) {
+        const e = entities.enemies[i];
+        if (e.y >= canvas.height || e.hp <= 0) {
+            entities.enemies.splice(i, 1);
+        }
+    }
+    for (let i = entities.missiles.length - 1; i >= 0; i--) {
+        const e = entities.missiles[i];
+        if (e.bounces >= gameState.maxMissileBounces || e.y <= -50 || e.y >= canvas.height + 50) {
+            entities.missiles.splice(i, 1);
+        }
+    }
+    for (let i = entities.explosions.length - 1; i >= 0; i--) {
+        if (entities.explosions[i].life <= 0) {
+            entities.explosions.splice(i, 1);
+        }
+    }
+    for (let i = entities.powerUps.length - 1; i >= 0; i--) {
+        if (entities.powerUps[i].y >= canvas.height) {
+            entities.powerUps.splice(i, 1);
+        }
+    }
 }
 
 function draw() {
@@ -1256,38 +1470,39 @@ function draw() {
 
     // 2. Shake effect
     if (gameState.shake > 1) {
-        ctx.translate(Math.random() * gameState.shake - gameState.shake / 2, Math.random() * gameState.shake - gameState.shake / 2);
+        ctx.translate(Math.floor(Math.random() * gameState.shake - gameState.shake / 2), Math.floor(Math.random() * gameState.shake - gameState.shake / 2));
     }
 
     // 3. Simple, Efficient Background Scroll
     const img = images.background;
     if (img && img.complete) {
         const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-        const dW = img.width * scale;
-        const dH = img.height * scale;
-        const dX = (canvas.width - dW) / 2;
+        const dW = Math.ceil(img.width * scale);
+        const dH = Math.ceil(img.height * scale);
+        const dX = Math.floor((canvas.width - dW) / 2);
 
-        // Loop the Y position
         let y = (gameState.bgY % dH + dH) % dH;
-
         ctx.imageSmoothingEnabled = false;
 
-        // Draw 3 tiles to ensure no gaps ever appear during transitions or on high-res PC screens
         const iy = Math.floor(y);
-        ctx.drawImage(img, Math.floor(dX), iy, Math.ceil(dW), Math.ceil(dH));
-        ctx.drawImage(img, Math.floor(dX), iy - Math.ceil(dH), Math.ceil(dW), Math.ceil(dH));
-        ctx.drawImage(img, Math.floor(dX), iy + Math.ceil(dH), Math.ceil(dW), Math.ceil(dH));
+        const idx = Math.floor(dX);
+        const idw = Math.floor(dW);
+        const idh = Math.floor(dH);
+
+        ctx.drawImage(img, idx, iy, idw, idh);
+        ctx.drawImage(img, idx, iy - idh, idw, idh);
     }
 
-    // 4. Draw entities
-    entities.powerUps.forEach(e => e.draw());
-    entities.bullets.forEach(e => e.draw());
-    entities.enemyBullets.forEach(e => e.draw());
-    entities.enemies.forEach(e => e.draw());
+    // 4. Draw entities (Using for loops for speed)
+    for (let i = 0; i < entities.powerUps.length; i++) entities.powerUps[i].draw();
+    for (let i = 0; i < entities.bullets.length; i++) entities.bullets[i].draw();
+    for (let i = 0; i < entities.enemyBullets.length; i++) entities.enemyBullets[i].draw();
+    for (let i = 0; i < entities.enemies.length; i++) entities.enemies[i].draw();
     if (entities.boss) entities.boss.draw();
-    entities.missiles.forEach(e => e.draw());
-    entities.explosions.forEach(e => e.draw());
-    entities.allies.forEach(e => e.draw());
+    for (let i = 0; i < entities.missiles.length; i++) entities.missiles[i].draw();
+    for (let i = 0; i < entities.explosions.length; i++) entities.explosions[i].draw();
+    for (let i = 0; i < entities.allies.length; i++) entities.allies[i].draw();
+    for (let i = 0; i < entities.damageNumbers.length; i++) entities.damageNumbers[i].draw();
     player.draw();
 
     ctx.restore();
@@ -1480,6 +1695,7 @@ function setupEventListeners() {
 
 function init() {
     setupEventListeners();
+    prerender(); // CPU-to-GPU Offloading: Generate textures once
     updateUI(); // Fix initial HP display
 
     // Display Best Scores
