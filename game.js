@@ -123,9 +123,17 @@ const gameState = {
     shake: 0,
     bgY: 0,
     sfxVolume: parseFloat(localStorage.getItem('space_shooter_sfx_volume')) || 0.6,
-    bgmVolume: 0.4,
-    graphicsQuality: 'high',
+    bgmVolume: parseFloat(localStorage.getItem('space_shooter_bgm_volume')) || 0.4,
+    graphicsQuality: localStorage.getItem('space_shooter_graphics') || 'high',
+    language: localStorage.getItem('space_shooter_lang') || 'vi',
 
+    // New Mechanics
+    uDropChanceModifier: 1.0,
+    buffStreak: 0,
+    streakTimer: 0,
+    streakPenaltyType: 0, // 0: none, 1: 80%, 2: 50%
+    accumulatedBossHp: 0,
+    
     // BOOM System Upgraded (Modified for Task 9)
     boomCharges: 1,
     boomMaxCharges: 1, // Max 1, no stacking as per Task 9
@@ -147,8 +155,80 @@ const gameState = {
 
     // Weapon Tiers: 0 (Yellow), 1 (Green), 2 (Blue)
     weaponTier: 0,
-    boomDamageMultiplier: 1.1
+    boomDamageMultiplier: 1.1,
+    language: localStorage.getItem('game_lang') || 'vn'
 };
+
+const translations = {
+    vn: {
+        vanguard: "QUÂN TIÊN PHONG",
+        nextBoss: "BOSS TIẾP THEO",
+        lvl: "CẤP",
+        missionPaused: "TẠM DỪNG NHIỆM VỤ",
+        pauseHint: "Nhấn Space hoặc Chuột Phải để tiếp tục",
+        resume: "TIẾP TỤC",
+        missionAborted: "NHIỆM VỤ THẤT BẠI",
+        score: "ĐIỂM SỐ",
+        level: "CẤP ĐỘ",
+        tryAgain: "THỬ LẠI",
+        settingsTitle: "CÀI ĐẶT",
+        language: "Ngôn Ngữ",
+        bgmVolume: "Âm Lượng Nhạc",
+        sfxVolume: "Âm Lượng Hiệu Ứng",
+        graphicsQuality: "Chất Lượng Đồ Họa",
+        high: "CAO",
+        low: "THẤP",
+        resetData: "XÓA TOÀN BỘ DỮ LIỆU",
+        loadingAssets: "ĐANG TẢI TÀI NGUYÊN...",
+        personalBest: "KỶ LỤC CÁ NHÂN",
+        maxLevel: "Cấp Tối Đa",
+        topScore: "Điểm Cao Nhất",
+        startMission: "BẮT ĐẦU NHIỆM VỤ",
+        settings: "CÀI ĐẶT",
+        controlHint: "CHẠM HOẶC CLICK ĐỂ DI CHUYỂN & BẮN"
+    },
+    en: {
+        vanguard: "VANGUARD UNIT",
+        nextBoss: "NEXT BOSS IN",
+        lvl: "LVL",
+        missionPaused: "MISSION PAUSED",
+        pauseHint: "Space or Right-Click to Resume",
+        resume: "RESUME",
+        missionAborted: "MISSION ABORTED",
+        score: "SCORE",
+        level: "LEVEL",
+        tryAgain: "TRY AGAIN",
+        settingsTitle: "SETTINGS",
+        language: "Language",
+        bgmVolume: "BGM Volume",
+        sfxVolume: "SFX Volume",
+        graphicsQuality: "Graphics Quality",
+        high: "HIGH",
+        low: "LOW",
+        resetData: "RESET ALL GAME DATA",
+        loadingAssets: "LOADING ASSETS...",
+        personalBest: "PERSONAL BEST",
+        maxLevel: "Max Level",
+        topScore: "Top Score",
+        startMission: "START MISSION",
+        settings: "SETTINGS",
+        controlHint: "TAP OR CLICK TO CONTROL & SHOOT"
+    }
+};
+
+function applyLanguage() {
+    const lang = gameState.language;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (translations[lang][key]) {
+            if (el.tagName === 'INPUT' && el.type === 'button') {
+                el.value = translations[lang][key];
+            } else {
+                el.textContent = translations[lang][key];
+            }
+        }
+    });
+}
 
 const entities = {
     bullets: [],
@@ -473,6 +553,7 @@ class Player {
         this.level = 0; // Task 3: Start with 1 bullet (0*2+1)
         this.slowTimer = 0;
         this.jammedTimer = 0;
+        this.fireRateDebuffTimer = 0; // New timer for lightning effect
         this.hp = 1000;
         this.maxHp = 1000;
         this.shield = 0;
@@ -523,6 +604,7 @@ class Player {
     update(dt) {
         if (this.slowTimer > 0) this.slowTimer -= dt;
         if (this.jammedTimer > 0) this.jammedTimer -= dt;
+        if (this.fireRateDebuffTimer > 0) this.fireRateDebuffTimer -= dt;
 
         let curLerp = this.slowTimer > 0 ? this.lerp * 0.4 : this.lerp;
         // Task 8: Mobile speed and smoother lerp
@@ -543,16 +625,40 @@ class Player {
         if (this.jammedTimer <= 0) {
             this.fireTimer += dt;
             let levelBonus = (gameState.level - 1) * 0.1;
-            let currentFireRate = 160 / (1 + levelBonus);
+            
+            // Task: Cap fire rate at 1 volley per second (1000ms)
+            // Anything beyond that is converted: +10% speed bonus = +3% damage
+            let baseInterval = 160; 
+            let targetInterval = baseInterval / (1 + levelBonus);
+            
+            let finalInterval = targetInterval;
+            let excessDamageBonus = 1.0;
+            const INITIAL_CAP_MS = 667; // 1.5 shots/s
+            const MAX_CAP_MS = 400;     // 2.5 shots/s
+            
+            // Limit scales from 1.5 at Level 1 to 2.5 at Higher Levels
+            // We can scale the cap based on level, e.g., reaching max cap at Level 10
+            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 30);
 
-            if (this.fireTimer >= currentFireRate) {
-                this.shoot();
+            if (targetInterval < currentCap) {
+                finalInterval = currentCap;
+                let excessPercent = (currentCap / targetInterval) - 1;
+                excessDamageBonus = 1 + (excessPercent * 0.3); // 10% speed = 3% dmg
+            }
+
+            // Apply lightning debuff (50% slower = 2x interval)
+            if (this.fireRateDebuffTimer > 0) {
+                finalInterval *= 2.0;
+            }
+
+            if (this.fireTimer >= finalInterval) {
+                this.shoot(excessDamageBonus);
                 this.fireTimer = 0;
             }
         }
     }
 
-    shoot() {
+    shoot(excessDamageBonus = 1.0) {
         // Task 3: Bullet limit 5, start 1
         let count = Math.floor(this.level * 2 + 1);
         if (gameState.weaponTier === 0 && count > 5) {
@@ -581,8 +687,8 @@ class Player {
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
         if (gameState.weaponTier === 2) bulletDamage *= 4.0;
         
-        // Apply PowerUp multipliers
-        bulletDamage *= this.damageMultiplier;
+        // Apply PowerUp multipliers and the overflow bonus
+        bulletDamage *= (this.damageMultiplier * excessDamageBonus);
 
         for (let i = 0; i < count; i++) {
             const step = count > 1 ? i / (count - 1) : 0.5;
@@ -867,11 +973,8 @@ class Missile {
         let finalDamage = missileDmg;
         if (target === entities.boss) {
             finalDamage = missileDmg * 5;
-            // Boss only takes 50% damage from teammate's missiles? 
-            // Wait, the request says "Chiến boss chỉe nhận 50% sát thương từ đognf đọi gay ra".
-            // If the missile was fired by an ally, it should be reduced.
-            // Let's add 'isAlly' to missiles.
-            if (this.isAlly) finalDamage *= 0.5;
+            // Task: Boss Resistance (20% from allies, 80% from player)
+            finalDamage *= (this.isAlly ? 0.2 : 0.8);
             
             target.hp -= finalDamage;
             this.bounces = gameState.maxMissileBounces; // Force stop after boss hit
@@ -918,7 +1021,7 @@ class Boss {
         this.height = 140;
         this.x = canvas.width / 2;
         this.y = -250;
-        this.targetY = 150;
+        this.targetY = canvas.height / 9;
 
         // Check if it's a Super Boss (every 5th boss)
         this.isSuper = (gameState.bossCount + 1) % 5 === 0;
@@ -926,7 +1029,10 @@ class Boss {
         // Progressive HP scaling (Significantly increased from level 2 onwards)
         const scalingFactor = gameState.bossCount >= 1 ? 25000 : 12000;
         const baseHp = 8000 + (gameState.bossCount * scalingFactor);
-        let finalMaxHp = this.isSuper ? baseHp * 4.5 : baseHp;
+        
+        // Task: HP stacking (previous boss HP + current scaling)
+        let finalMaxHp = baseHp + gameState.accumulatedBossHp; 
+        if (this.isSuper) finalMaxHp *= 4.5;
 
         // Task: Increase Boss HP > level 2 by 15%
         if (gameState.bossCount >= 1) { // Level 2 and above
@@ -942,20 +1048,24 @@ class Boss {
         }
 
         this.fireTimer = 0;
+        this.lightningTimer = 0; // New timer for lightning attack
         this.debuffTimer = 0;
         this.moveTimer = 0;
 
         // Thresholds for Super Boss Downgrade Attack
         this.thresholds = [0.8, 0.5, 0.3, 0.1];
         this.triggeredThresholds = new Set();
-        this.spawnProtectionTimer = 5000;
+        this.spawnProtectionTimer = 5000; // 5s protection
     }
 
-    takeDamage(amt) {
+    takeDamage(amt, isAlly = false) {
+        // Task: Boss Resistance (20% from allies, 80% from player)
+        let finalAmt = isAlly ? amt * 0.2 : amt * 0.8;
+
         if (this.spawnProtectionTimer > 0) {
-            amt *= 0.2; // 80% reduction
+            finalAmt *= 0.2; // 80% reduction
         }
-        this.hp -= amt;
+        this.hp -= finalAmt;
     }
 
     fireDowngradeWave() {
@@ -972,8 +1082,12 @@ class Boss {
     update(dt) {
         if (this.spawnProtectionTimer > 0) this.spawnProtectionTimer -= dt;
         const timeFactor = dt / 16.6;
-        if (this.y < this.targetY) this.y += 0.45 * timeFactor; // Slower descent (30% of 1.5)
-        else {
+        
+        if (this.y < this.targetY) {
+            // Fast arrival in first 1s (spawnProtection is 5s, so first 1s is 5000->4000)
+            const arrivalSpeed = (this.spawnProtectionTimer > 4000) ? 7 : 0.45;
+            this.y += arrivalSpeed * timeFactor;
+        } else {
             this.moveTimer += dt;
             // Slower horizontal movement oscillation
             this.x = canvas.width / 2 + Math.sin(this.moveTimer / 3500) * (canvas.width / 3);
@@ -992,8 +1106,11 @@ class Boss {
         }
 
         this.fireTimer += dt;
-        const bossFireRate = Math.max(600, 1500 / (1 + gameState.bossCount * 0.2));
-        const finalFireRate = this.isSuper ? bossFireRate * 0.7 : bossFireRate;
+        this.lightningTimer += dt;
+
+        const bossFireRate = 1500 / (1 + gameState.bossCount * 0.2);
+        let finalFireRate = this.isSuper ? bossFireRate * 0.7 : bossFireRate;
+        finalFireRate = Math.max(1000, finalFireRate); // Cap at 1 shot per second
 
         if (this.fireTimer > finalFireRate) { // Progressive fire rate
             const spreadCount = this.isSuper ? 5 : 3;
@@ -1001,6 +1118,23 @@ class Boss {
                 entities.enemyBullets.push(new Bullet(this.x + i * 25, this.y + 60, Math.PI / 2 + i * 0.2, 1, true));
             }
             this.fireTimer = 0;
+        }
+
+        // Lightning Strike Attack
+        const lightningInterval = this.isSuper ? 4000 : 7000;
+        if (this.lightningTimer > lightningInterval) {
+            this.lightningTimer = 0;
+            // Visual feedback
+            entities.explosions.push(new Explosion(player.x, player.y, true));
+            playSound('debuff');
+            
+            // Damage: 200 + 10% of Max HP
+            const lightningDmg = 200 + (player.maxHp * 0.1);
+            player.takeDamage(lightningDmg);
+            player.fireRateDebuffTimer = 5000; // 5s slow fire rate
+            
+            // Draw lightning line effect (temporary visual)
+            gameState.shake = 15;
         }
 
         this.debuffTimer += dt;
@@ -1014,9 +1148,9 @@ class Boss {
     }
 
     draw() {
-        // Boss Health Bar UI (y moved to 70 to avoid HUD)
+        // Boss Health Bar UI (y moved to 95 to avoid HUD)
         const bw = Math.min(canvas.width * 0.85, 400);
-        const barY = 70;
+        const barY = 95;
         ctx.save();
 
         ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
@@ -1123,7 +1257,12 @@ function killEnemy(e) {
     // Scaling: 50 + 2% of max HP
     player.hp = Math.min(player.maxHp, player.hp + (50 + player.maxHp * 0.02));
 
-    const totalDropChance = e.type === 'small' ? 0.04 : 0.18;
+    let totalDropChance = e.type === 'small' ? 0.04 : 0.18;
+    
+    // Applying Luck Fatigue penalty
+    if (gameState.streakPenaltyType === 1) totalDropChance *= 0.2; // 80% reduction
+    else if (gameState.streakPenaltyType === 2) totalDropChance *= 0.5; // 50% reduction
+
     const rand = Math.random();
     if (rand < totalDropChance) {
         let type = 'W';
@@ -1133,7 +1272,7 @@ function killEnemy(e) {
         else if (innerRand < 0.65) type = 'H';
         else if (innerRand < 0.85) type = 'S';
         // Small chance for 'U' from medium only
-        if (e.type === 'medium' && Math.random() < 0.01) type = 'U';
+        if (e.type === 'medium' && Math.random() < (0.01 * gameState.uDropChanceModifier)) type = 'U';
         entities.powerUps.push(new PowerUp(e.x, e.y, type));
     }
 
@@ -1196,7 +1335,10 @@ function updateUI() {
     document.getElementById('score-val').innerText = gameState.score;
     document.getElementById('level-val').innerText = gameState.level;
     const nextBossEl = document.getElementById('next-boss-val');
-    if (nextBossEl) nextBossEl.innerText = gameState.nextBossScore;
+    if (nextBossEl) {
+        const remaining = Math.max(0, gameState.nextBossScore - gameState.score);
+        nextBossEl.innerText = Math.floor(remaining);
+    }
 
     // Update HP Bar & Text
     const hpBar = document.getElementById('hp-bar-inner');
@@ -1270,6 +1412,22 @@ function update(dt) {
     if (gameState.bgY > 100000) gameState.bgY %= 50000;
 
     if (gameState.shake > 0) gameState.shake *= Math.pow(0.88, timeFactor);
+
+    // Buff Streak / Luck Fatigue Timer
+    if (gameState.streakTimer > 0) {
+        gameState.streakTimer -= dt;
+        if (gameState.streakTimer <= 0) {
+            if (gameState.streakPenaltyType === 1) {
+                // Done with 80% penalty, move to 50% penalty for 5s
+                gameState.streakPenaltyType = 2;
+                gameState.streakTimer = 5000;
+            } else {
+                // Done with all penalties
+                gameState.streakPenaltyType = 0;
+                gameState.buffStreak = 0;
+            }
+        }
+    }
 
     player.update(dt);
 
@@ -1392,8 +1550,9 @@ function update(dt) {
             }
             
             let currentDmg = b.damage;
-            if (hitEntity === entities.boss && b.isAlly) {
-                currentDmg *= 0.5; // Boss takes 50% less damage from ally bullets
+            if (hitEntity === entities.boss) {
+                // Task: Boss Resistance (20% from allies, 80% from player)
+                currentDmg = b.isAlly ? b.damage * 0.2 : b.damage * 0.8;
             }
             
             data.dmg += currentDmg;
@@ -1409,7 +1568,7 @@ function update(dt) {
         let isCrit = Math.random() < 0.1;
         if (isCrit) finalDmg *= 1.45;
 
-        if (entity.takeDamage) entity.takeDamage(finalDmg);
+        if (entity.takeDamage) entity.takeDamage(finalDmg, false); // Default isAlly=false as we applied mult above
         else entity.hp -= finalDmg;
 
         entities.damageNumbers.push(new DamageNumber(data.x, data.y - 20, finalDmg, isCrit));
@@ -1420,13 +1579,21 @@ function update(dt) {
                 createExplosion(entities.boss.x, entities.boss.y, true);
                 gameState.score += 6000; // Increase score significantly to trigger an immediate level up
                 gameState.bossCount++;
+                // Save boss HP for next boss stacking
+                gameState.accumulatedBossHp += entities.boss.maxHp;
                 // Boss points scaling: Increase more aggressively after each boss
                 gameState.nextBossScore = gameState.score + 4000 + (gameState.bossCount * 2500);
                 
                 // Drop system: Minimum 1 buff, potentially more if lucky
-                const numDrops = isSuper ? 3 : (Math.floor(Math.random() * 3) + 1); // Super Boss drops more
+                let numDrops = isSuper ? 3 : (Math.floor(Math.random() * 3) + 1); // Super Boss drops more
+                
+                // Luck Fatigue penalty for boss drops too? User said "giảm mạnh khả năng nhập buff". 
+                // Let's apply it to boss drop count.
+                if (gameState.streakPenaltyType === 1) numDrops = Math.max(1, Math.floor(numDrops * 0.2));
+                else if (gameState.streakPenaltyType === 2) numDrops = Math.max(1, Math.floor(numDrops * 0.5));
+
                 const dropTypes = ['W', 'H', 'A', 'B', 'S'];
-                const uChance = isSuper ? 0.30 : 0.04;
+                const uChance = (isSuper ? 0.30 : 0.04) * gameState.uDropChanceModifier;
 
                 for (let i = 0; i < numDrops; i++) {
                     // Chance for 'U' (Weapon Upgrade) based on boss type, otherwise random other buff
@@ -1522,6 +1689,14 @@ function update(dt) {
 
         if (dx * dx + dy * dy < 1444) { // 38^2 = 1444
             playSound('powerup');
+            
+            // Luck Fatigue System: 3 buffs trigger reduction
+            gameState.buffStreak++;
+            if (gameState.buffStreak >= 3) {
+                gameState.streakTimer = 5000; // Start first 5s penalty
+                gameState.streakPenaltyType = 1; // 80% reduction
+            }
+
             if (p.type === 'W') {
                 player.level += 0.5;
                 player.damageMultiplier *= 1.05; // Reduced from 1.1 (Upgrade damage by 5% for each bullet upgrade buff)
@@ -1537,9 +1712,8 @@ function update(dt) {
                     entities.allies.push(new Ally(player, entities.allies.length));
                 } else {
                     // Replace weakest ally (lowest HP)
-                    let weakest = null;
-                    let minHp = Infinity;
                     let weakestIdx = -1;
+                    let minHp = Infinity;
                     for (let i = 0; i < entities.allies.length; i++) {
                         if (entities.allies[i].hp < minHp) {
                             minHp = entities.allies[i].hp;
@@ -1558,6 +1732,9 @@ function update(dt) {
                     gameState.boomDamageMultiplier += 0.1; // +10% damage if already at max bounces
                 }
             } else if (p.type === 'U') {
+                // Decay 'U' (Weapon Upgrade) drop rate
+                gameState.uDropChanceModifier = Math.max(0.005, gameState.uDropChanceModifier * 0.4);
+
                 if (gameState.weaponTier < 2) {
                     gameState.weaponTier++;
                     player.level = 0;
@@ -1760,8 +1937,10 @@ function setupEventListeners() {
     // Settings Functionality
     const bgmRange = document.getElementById('bgm-range');
     if (bgmRange) {
+        bgmRange.value = gameState.bgmVolume * 100;
         bgmRange.addEventListener('input', (e) => {
             gameState.bgmVolume = e.target.value / 100;
+            localStorage.setItem('space_shooter_bgm_volume', gameState.bgmVolume);
         });
     }
 
@@ -1777,8 +1956,17 @@ function setupEventListeners() {
     const highBtn = document.getElementById('graphics-high');
     const lowBtn = document.getElementById('graphics-low');
     if (highBtn && lowBtn) {
+        // Apply saved settings visual state
+        if (gameState.graphicsQuality === 'low') {
+            lowBtn.classList.replace('bg-white/5', 'bg-amber-400');
+            lowBtn.classList.replace('text-white', 'text-slate-950');
+            highBtn.classList.replace('bg-amber-400', 'bg-white/5');
+            highBtn.classList.replace('text-slate-950', 'text-white');
+        }
+
         highBtn.addEventListener('click', () => {
             gameState.graphicsQuality = 'high';
+            localStorage.setItem('space_shooter_graphics', 'high');
             highBtn.classList.replace('bg-white/5', 'bg-amber-400');
             highBtn.classList.replace('text-white', 'text-slate-950');
             lowBtn.classList.replace('bg-amber-400', 'bg-white/5');
@@ -1786,10 +1974,60 @@ function setupEventListeners() {
         });
         lowBtn.addEventListener('click', () => {
             gameState.graphicsQuality = 'low';
+            localStorage.setItem('space_shooter_graphics', 'low');
             lowBtn.classList.replace('bg-white/5', 'bg-amber-400');
             lowBtn.classList.replace('text-white', 'text-slate-950');
             highBtn.classList.replace('bg-amber-400', 'bg-white/5');
             highBtn.classList.replace('text-slate-950', 'text-white');
+        });
+    }
+
+    // Language Tab Logic
+    const langVi = document.getElementById('lang-vi');
+    const langEn = document.getElementById('lang-en');
+    if (langVi && langEn) {
+        const updateLangButtons = () => {
+            if (gameState.language === 'en') {
+                langEn.classList.replace('bg-white/5', 'bg-amber-400');
+                langEn.classList.replace('text-white', 'text-slate-950');
+                langEn.classList.add('font-black');
+                langVi.classList.replace('bg-amber-400', 'bg-white/5');
+                langVi.classList.replace('text-slate-950', 'text-white');
+                langVi.classList.remove('font-black');
+            } else {
+                langVi.classList.replace('bg-white/5', 'bg-amber-400');
+                langVi.classList.replace('text-white', 'text-slate-950');
+                langVi.classList.add('font-black');
+                langEn.classList.replace('bg-amber-400', 'bg-white/5');
+                langEn.classList.replace('text-slate-950', 'text-white');
+                langEn.classList.remove('font-black');
+            }
+        };
+
+        updateLangButtons();
+
+        langVi.addEventListener('click', () => {
+            gameState.language = 'vn';
+            localStorage.setItem('game_lang', 'vn');
+            applyLanguage();
+            updateLangButtons();
+        });
+        langEn.addEventListener('click', () => {
+            gameState.language = 'en';
+            localStorage.setItem('game_lang', 'en');
+            applyLanguage();
+            updateLangButtons();
+        });
+    }
+
+    // Reset Data Logic
+    const resetBtn = document.getElementById('reset-data-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            if (confirm("Xác nhận xóa toàn bộ dữ liệu? / Reset all data?")) {
+                localStorage.clear();
+                location.reload();
+            }
         });
     }
 
@@ -1833,7 +2071,13 @@ function setupEventListeners() {
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space') {
             e.preventDefault();
-            togglePause();
+            // If game not started, space starts it
+            if (!gameState.isStarted) {
+                const startBtn = document.getElementById('start-btn');
+                if (startBtn) startBtn.click();
+            } else {
+                togglePause();
+            }
         }
     });
 
@@ -1845,6 +2089,7 @@ function setupEventListeners() {
 
 function init() {
     setupEventListeners();
+    applyLanguage();
     prerender(); // CPU-to-GPU Offloading: Generate textures once
     updateUI(); // Fix initial HP display
 
