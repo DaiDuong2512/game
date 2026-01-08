@@ -406,7 +406,7 @@ class Ally {
                     false,
                     gameState.weaponTier
                 );
-                b.radius = 2.5;
+                b.radius = 1.6; // Significantly smaller than player (4.0)
                 b.isLong = true;
                 entities.bullets.push(b);
             }
@@ -650,14 +650,20 @@ class Bullet {
 
         if (!tex) return;
 
+        // NEW: Respect this.radius for scaling (Player/Enemy default radius is 4)
+        // This ensures ally bullets (radius 1.6) are smaller than player bullets (radius 4.0)
+        const scale = (this.isEnemy || this.isDebuff || this.isDowngrade) ? 1.0 : (this.radius / 4);
+        const w = tex.width * scale;
+        const h = tex.height * scale;
+
         if (this.isLong) {
             ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(Math.atan2(this.vy, this.vx));
-            ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+            ctx.drawImage(tex, -w / 2, -h / 2, w, h);
             ctx.restore();
         } else {
-            ctx.drawImage(tex, Math.floor(this.x - tex.width / 2), Math.floor(this.y - tex.height / 2));
+            ctx.drawImage(tex, Math.floor(this.x - w / 2), Math.floor(this.y - h / 2), w, h);
         }
     }
 }
@@ -722,27 +728,31 @@ class Enemy {
         }
 
         this.fireTimer += dt;
-        let levelFireBonus = (gameState.level - 1) * 0.1;
-        const baseFireRate = 2500 / (1 + (gameState.difficulty - 1) * 0.3);
-        let fireRate = Math.max(600, baseFireRate / (1 + levelFireBonus));
+        let levelFireBonus = (gameState.level - 1) * 0.13; // +3% from before (0.1 -> 0.13)
+        const baseFireRate = 5000 / (1 + (gameState.difficulty - 1) * 0.3); // base 2500 -> 5000 (50% slower)
+        let fireRate = Math.max(800, baseFireRate / (1 + levelFireBonus)); // min 600 -> 800
 
         if (this.bulletCount > 1) {
             fireRate *= 1.8;
         }
 
         if (this.fireTimer > fireRate) {
+            // Damage scaling: base 80 -> 104 (+30%) then increased by 1.6x after each level
+            const levelDmgFactor = Math.pow(1.6, gameState.level - 1);
+            const bulletDmg = 80 * 1.3 * levelDmgFactor;
+
             if (this.bulletCount > 1) {
-                const spread = 0.6;
+                const spread = 0.75;
                 const startAngle = Math.PI / 2 - spread / 2;
                 for (let i = 0; i < this.bulletCount; i++) {
                     const step = i / (this.bulletCount - 1);
-                    entities.enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, startAngle + step * spread, 80, true));
+                    entities.enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, startAngle + step * spread, bulletDmg, true));
                 }
             } else if (this.type === 'medium') {
-                entities.enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, Math.PI / 2, 80, true));
+                entities.enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, Math.PI / 2, bulletDmg, true));
             } else {
                 const angle = Math.atan2(player.y - this.y, player.x - this.x);
-                entities.enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, angle, 80, true));
+                entities.enemyBullets.push(new Bullet(this.x, this.y + this.height / 2, angle, bulletDmg, true));
             }
             this.fireTimer = 0;
         }
@@ -1068,18 +1078,28 @@ function killEnemy(e) {
     gameState.score += e.type === 'small' ? 50 : 120;
 
     // Healing - Increased heal for Boom or just general?
-    // User mentioned "boom nổ mà không hồi hp" - let's make sure it heals.
-    player.hp = Math.min(player.maxHp, player.hp + 15); // Slightly more heal on death
+    // Scaling: 50 + 2% of max HP
+    player.hp = Math.min(player.maxHp, player.hp + (50 + player.maxHp * 0.02));
 
     const rand = Math.random();
-    if (rand < 0.25) {
+    if (rand < 0.28) { // Increased total drop chance slightly
         let type = 'W';
         if (rand < 0.08) type = 'A';
-        else if (rand < 0.14) type = 'B';
-        else if (rand < 0.17) type = 'H';
-        else if (rand < 0.20) type = 'S';
+        else if (rand < 0.11) type = 'B';
+        else if (rand < 0.20) type = 'H'; // Increased from 6% to 9% (0.20-0.11)
+        else if (rand < 0.23) type = 'S'; // Shifted
         if (e.type === 'medium' && Math.random() < 0.004) type = 'U';
         entities.powerUps.push(new PowerUp(e.x, e.y, type));
+    }
+
+    // Minion Spawn on Death
+    if (e.type === 'medium') {
+        const spawnChance = entities.boss ? 0.8 : 0.2;
+        if (Math.random() < spawnChance) {
+            for (let i = 0; i < 2; i++) {
+                entities.enemies.push(new Enemy(e.x + (i - 0.5) * 40, e.y, 'small'));
+            }
+        }
     }
 }
 
@@ -1190,8 +1210,8 @@ function update(dt) {
 
     // Level Up: Increase Max HP
     if (gameState.level > gameState.lastLevel) {
-        player.maxHp += 200;
-        player.hp = Math.min(player.maxHp, player.hp + 200); // Heal a bit on level up
+        player.maxHp += 400; // Increased scaling
+        player.hp = Math.min(player.maxHp, player.hp + 500); // Increased heal
         gameState.lastLevel = gameState.level;
         playSound('levelUp');
         updateUI();
@@ -1359,6 +1379,14 @@ function update(dt) {
                     const type = Math.random() < uChance ? 'U' : dropTypes[Math.floor(Math.random() * dropTypes.length)];
                     entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops-1)/2) * 40, entities.boss.y, type));
                 }
+
+                // Boss death spawns minions
+                for (let i = 0; i < 5; i++) {
+                    entities.enemies.push(new Enemy(entities.boss.x + (i - 2) * 50, entities.boss.y, 'small'));
+                }
+                for (let i = 0; i < 3; i++) {
+                    entities.enemies.push(new Enemy(entities.boss.x + (i - 1) * 80, entities.boss.y + 50, 'medium'));
+                }
                 
                 gameState.isBossFight = false;
                 entities.boss = null;
@@ -1442,9 +1470,10 @@ function update(dt) {
             playSound('powerup');
             if (p.type === 'W') {
                 player.level += 0.5;
-                player.damageMultiplier *= 1.3; // Upgrade damage by 30% for each bullet upgrade buff
+                player.damageMultiplier *= 1.1; // Upgrade damage by 10% for each bullet upgrade buff
             } else if (p.type === 'H') {
-                const healAmt = 200;
+                // Scaling: 250 + 10% of max HP
+                const healAmt = 250 + player.maxHp * 0.1;
                 player.hp = Math.min(player.maxHp, player.hp + healAmt);
                 for (let ai = 0; ai < entities.allies.length; ai++) {
                     entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + healAmt * 0.3);
@@ -1452,6 +1481,20 @@ function update(dt) {
             } else if (p.type === 'A') {
                 if (entities.allies.length < 6) {
                     entities.allies.push(new Ally(player, entities.allies.length));
+                } else {
+                    // Replace weakest ally (lowest HP)
+                    let weakest = null;
+                    let minHp = Infinity;
+                    let weakestIdx = -1;
+                    for (let i = 0; i < entities.allies.length; i++) {
+                        if (entities.allies[i].hp < minHp) {
+                            minHp = entities.allies[i].hp;
+                            weakestIdx = i;
+                        }
+                    }
+                    if (weakestIdx !== -1) {
+                        entities.allies[weakestIdx] = new Ally(player, weakestIdx);
+                    }
                 }
             } else if (p.type === 'B') {
                 gameState.boomChargeSpeed = Math.max(2000, gameState.boomChargeSpeed - 500);
