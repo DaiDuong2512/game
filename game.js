@@ -1210,6 +1210,23 @@ function init() {
         document.getElementById('start-screen').classList.add('hidden');
     });
 
+    // Settings Button Logic
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsScreen = document.getElementById('settings-screen');
+    const closeSettings = document.getElementById('close-settings');
+
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            settingsScreen.classList.remove('hidden');
+        });
+    }
+
+    if (closeSettings) {
+        closeSettings.addEventListener('click', () => {
+            settingsScreen.classList.add('hidden');
+        });
+    }
+
     // Detect Mobile
     if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
         gameState.isMobile = true;

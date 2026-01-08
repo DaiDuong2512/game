@@ -69,6 +69,23 @@ canvas {
     filter: drop-shadow(0 0 5px #f97316);
 }
 
+input[type="range"] {
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    height: 4px;
+    border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #fbbf24;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+}
+
 #gameCanvas {
     background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
 }
