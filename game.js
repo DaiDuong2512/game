@@ -251,18 +251,24 @@ function prerender() {
         { name: 'yellow', color: '#fbbf24', radius: 4 },
         { name: 'green', color: '#22c55e', radius: 4 },
         { name: 'blue', color: '#3b82f6', radius: 4 },
-        { name: 'red', color: '#ef4444', radius: 4 },
+        { name: 'red', color: '#ef4444', radius: 6, glow: '#ff0000' }, // Enhanced Red for visibility
         { name: 'debuff', color: '#a855f7', radius: 10 },
-        { name: 'downgrade', color: '#ec4899', radius: 10 }
+        { name: 'downgrade', color: '#ec4899', radius: 10 },
+        { name: 'cyan', color: '#22d3ee', radius: 5 } // New Blue-Cyan for boss debuff
     ];
 
     bulletTypes.forEach(t => {
         const canv = document.createElement('canvas');
-        const size = (t.radius + 2) * 2;
+        const size = (t.radius + 6) * 2; // Extra padding for glow
         canv.width = size;
         canv.height = size;
         const c = canv.getContext('2d');
         const center = size / 2;
+
+        if (t.glow) {
+            c.shadowBlur = 10;
+            c.shadowColor = t.glow;
+        }
 
         const grad = c.createRadialGradient(center, center, 1, center, center, t.radius);
         grad.addColorStop(0, '#fff');
@@ -627,16 +633,16 @@ class Player {
             
             // Task: Cap fire rate at 1 volley per second (1000ms)
             // Anything beyond that is converted: +10% speed bonus = +3% damage
-            let baseInterval = 286; 
+            let baseInterval = 222; // 4.5 shots/s
             let targetInterval = baseInterval / (1 + levelBonus);
             
             let finalInterval = targetInterval;
             let excessDamageBonus = 1.0;
-            const INITIAL_CAP_MS = 286; // 3.5 shots/s (1000/286)
-            const MAX_CAP_MS = 200;     // 5.0 shots/s (1000/200)
+            const INITIAL_CAP_MS = 222; // 4.5 shots/s
+            const MAX_CAP_MS = 167;     // 6.0 shots/s
             
-            // Limit scales from 3.5 at Level 1 to 5.0 at Level 10
-            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 10);
+            // Limit scales from 4.5 at Level 1 to 6.0 at Level 10
+            let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 6);
 
             if (targetInterval < currentCap) {
                 finalInterval = currentCap;
@@ -680,13 +686,13 @@ class Player {
 
         const spread = 0.09; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
-        // Reduced from 0.4 to 0.15 per boss
-        let bulletDamage = (this.level <= 5 ? 40 : 40 + (this.level - 5) * 20) * (1 + gameState.bossCount * 0.15);
+        // Reduced from 0.4 to 0.15 per boss | Base damage increased by 80% (40 -> 72)
+        let bulletDamage = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + gameState.bossCount * 0.15);
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
         if (gameState.weaponTier === 2) bulletDamage *= 4.0;
         
         // Apply PowerUp multipliers and the overflow bonus
-        bulletDamage *= (this.damageMultiplier * excessDamageBonus);
+        bulletDamage *= (this.damageMultiplier * excessDamageBonus * 1.8);
 
         for (let i = 0; i < count; i++) {
             const step = count > 1 ? i / (count - 1) : 0.5;
@@ -733,15 +739,22 @@ class Bullet {
     constructor(x, y, angle, damage, isEnemy = false, isDebuff = false, tier = 0, isDowngrade = false, isAlly = false) {
         this.x = x;
         this.y = y;
-        this.vx = Math.cos(angle) * (isEnemy ? 5 : 9);
-        this.vy = Math.sin(angle) * (isEnemy ? 5 : 9);
+        this.vx = Math.cos(angle) * (isEnemy ? 4.5 : 9); // Enemy speed reduced by 10% (5 -> 4.5)
+        this.vy = Math.sin(angle) * (isEnemy ? 4.5 : 9);
         this.damage = damage;
         this.isEnemy = isEnemy;
         this.isDebuff = isDebuff;
+        this.isBossSpeedDebuff = false; // Internal flag
+        
+        // 10% chance for a debuff to be a speed debuff
+        if (isDebuff && Math.random() < 0.1) {
+            this.isBossSpeedDebuff = true;
+        }
+
         this.isDowngrade = isDowngrade;
         this.isAlly = isAlly;
         this.tier = tier; // 0: Yellow, 1: Green, 2: Blue
-        this.radius = isDebuff || isDowngrade ? 10 : 4;
+        this.radius = isDebuff || isDowngrade ? 10 : (isEnemy ? 6 : 4);
         this.trail = [];
     }
 
@@ -754,7 +767,11 @@ class Bullet {
     draw() {
         // GPU Offloading: Use drawImage for textures
         let tex = null;
-        if (this.isDebuff) tex = TEXTURES.bullet_debuff;
+        if (this.isDebuff) {
+            // New logic: 10% chance for cyan boss debuff
+            if (this.isBossSpeedDebuff) tex = TEXTURES.bullet_cyan;
+            else tex = TEXTURES.bullet_debuff;
+        }
         else if (this.isDowngrade) tex = TEXTURES.bullet_downgrade;
         else if (this.isEnemy) tex = TEXTURES.bullet_red;
         else {
@@ -775,10 +792,22 @@ class Bullet {
             ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(Math.atan2(this.vy, this.vx));
+
+            // Enemy bullets get a pulse effect to be more visible
+            if (this.isEnemy) {
+                const pulse = 1 + Math.sin(performance.now() / 50) * 0.2;
+                ctx.scale(pulse, pulse);
+            }
+
             ctx.drawImage(tex, -w / 2, -h / 2, w, h);
             ctx.restore();
         } else {
-            ctx.drawImage(tex, Math.floor(this.x - w / 2), Math.floor(this.y - h / 2), w, h);
+            if (this.isEnemy) {
+                const pulse = 1 + Math.sin(performance.now() / 50) * 0.2;
+                ctx.drawImage(tex, Math.floor(this.x - (w * pulse) / 2), Math.floor(this.y - (h * pulse) / 2), w * pulse, h * pulse);
+            } else {
+                ctx.drawImage(tex, Math.floor(this.x - w / 2), Math.floor(this.y - h / 2), w, h);
+            }
         }
     }
 }
@@ -1482,7 +1511,10 @@ function update(dt) {
     }
 
     if (!gameState.isBossFight && spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
-        spawnEnemy();
+        // Redo spawn chance: reduce spawn frequency by another 15%
+        if (Math.random() < 0.85) {
+            spawnEnemy();
+        }
         spawnTimer = 0;
     }
 
