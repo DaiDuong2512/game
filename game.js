@@ -292,7 +292,7 @@ class Player {
         }
         count = Math.min(count, 5);
 
-        const spread = 0.9; // Reduced spread for higher concentration
+        const spread = 0.08; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
         let bulletDamage = this.level <= 5 ? 25 : 25 + (this.level - 5) * 15;
         if (gameState.weaponTier === 1) bulletDamage *= 3.0;
@@ -1424,3 +1424,4 @@ function init() {
 }
 
 preload();
+
