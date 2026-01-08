@@ -251,10 +251,10 @@ function prerender() {
         { name: 'yellow', color: '#fbbf24', radius: 4 },
         { name: 'green', color: '#22c55e', radius: 4 },
         { name: 'blue', color: '#3b82f6', radius: 4 },
-        { name: 'red', color: '#ef4444', radius: 6, glow: '#ff0000' }, // Enhanced Red for visibility
-        { name: 'debuff', color: '#a855f7', radius: 10 },
-        { name: 'downgrade', color: '#ec4899', radius: 10 },
-        { name: 'cyan', color: '#22d3ee', radius: 5 } // New Blue-Cyan for boss debuff
+        { name: 'red', color: '#ef4444', radius: 4.2, glow: '#ff0000' }, // Reduced 30% (was 6)
+        { name: 'debuff', color: '#a855f7', radius: 7 },         // Reduced 30% (was 10)
+        { name: 'downgrade', color: '#ec4899', radius: 7 },      // Reduced 30% (was 10)
+        { name: 'cyan', color: '#22d3ee', radius: 3.5 }          // Reduced 30% (was 5)
     ];
 
     bulletTypes.forEach(t => {
@@ -394,6 +394,77 @@ function prerender() {
     mc.fillStyle = '#f59e0b';
     mc.beginPath(); mc.moveTo(0, -15); mc.lineTo(-8, 5); mc.lineTo(0, 15); mc.lineTo(8, 5); mc.closePath(); mc.fill();
     TEXTURES['missile_tex'] = missileCanv;
+
+    // --- Prerender Enemies (GPU Texture Batching) ---
+    const enemyTypes = [
+        { name: 'small', color: '#ff4444', size: 32 },
+        { name: 'medium', color: '#ffaa00', size: 48 }
+    ];
+
+    enemyTypes.forEach(t => {
+        // Base and Shield versions
+        [false, true].forEach(isBuffed => {
+            const canv = document.createElement('canvas');
+            canv.width = t.size + 30; // More padding for buffed glow
+            canv.height = t.size + 30;
+            const c = canv.getContext('2d');
+            const center = canv.width / 2;
+
+            // Buffed enemies (multi-bullet) use a more intense purple/magenta color scheme
+            const mainColor = isBuffed ? '#d946ef' : t.color;
+            const glowColor = isBuffed ? '#ff00ff' : t.color;
+
+            c.shadowBlur = isBuffed ? 15 : 10;
+            c.shadowColor = glowColor;
+            
+            c.fillStyle = mainColor;
+            c.beginPath();
+            if (isBuffed) {
+                // Buffed shape: More aggressive with extra wings
+                c.moveTo(center, center - t.size / 2); // Tip
+                c.lineTo(center - t.size / 1.5, center + t.size / 3); // Left wing outer
+                c.lineTo(center - t.size / 3, center + t.size / 5); // Left wing inner
+                c.lineTo(center - t.size / 2, center + t.size / 1.5); // Bottom left
+                c.lineTo(center, center + t.size / 3); // Notch
+                c.lineTo(center + t.size / 2, center + t.size / 1.5); // Bottom right
+                c.lineTo(center + t.size / 3, center + t.size / 5); // Right wing inner
+                c.lineTo(center + t.size / 1.5, center + t.size / 3); // Right wing outer
+            } else {
+                // Normal ship shape
+                c.moveTo(center, center - t.size / 2);
+                c.lineTo(center - t.size / 2, center + t.size / 2);
+                c.lineTo(center, center + t.size / 4);
+                c.lineTo(center + t.size / 2, center + t.size / 2);
+            }
+            c.closePath();
+            c.fill();
+
+            // Cockpit
+            c.shadowBlur = 0;
+            c.fillStyle = isBuffed ? '#fff' : '#fff';
+            c.beginPath();
+            c.arc(center, center + t.size / 6, t.size / 6, 0, Math.PI * 2);
+            c.fill();
+
+            const suffix = (isBuffed ? '_buffed' : '');
+            TEXTURES['enemy_' + t.name + suffix] = canv;
+            
+            // Shield version
+            const sCanv = document.createElement('canvas');
+            sCanv.width = canv.width;
+            sCanv.height = canv.height;
+            const sc = sCanv.getContext('2d');
+            sc.drawImage(canv, 0, 0);
+            sc.strokeStyle = isBuffed ? '#f0f' : '#00ffff';
+            sc.lineWidth = 3;
+            sc.beginPath();
+            sc.arc(center, center, t.size / 1.3, 0, Math.PI * 2);
+            sc.stroke();
+            TEXTURES['enemy_' + t.name + suffix + '_shield'] = sCanv;
+        });
+    });
+
+    //console.log("GPU Optimization: Enemy textures ready.");
 }
 
 class DamageNumber {
@@ -553,12 +624,12 @@ class Player {
         this.height = 55;
         this.x = canvas.width / 2;
         this.y = canvas.height - 100;
-        this.lerp = 0.15;
+        this.lerp = 0.10; // Reduced from 0.15 to make it take more time to follow mouse
         this.fireTimer = 0;
         this.level = 0; // Task 3: Start with 1 bullet (0*2+1)
         this.slowTimer = 0;
         this.jammedTimer = 0;
-        this.fireRateDebuffTimer = 0; // New timer for lightning effect
+        this.fireRateDebuffTimer = 0; // Now converted to movement slow as per request
         this.hp = 1000;
         this.maxHp = 1000;
         this.shield = 0;
@@ -611,7 +682,8 @@ class Player {
         if (this.jammedTimer > 0) this.jammedTimer -= dt;
         if (this.fireRateDebuffTimer > 0) this.fireRateDebuffTimer -= dt;
 
-        let curLerp = this.slowTimer > 0 ? this.lerp * 0.4 : this.lerp;
+        // Task: Debuff slows movement by 30% (curLerp * 0.7) for 2s
+        let curLerp = (this.slowTimer > 0 || this.fireRateDebuffTimer > 0) ? this.lerp * 0.7 : this.lerp;
         // Task 8: Mobile speed and smoother lerp
         let lerpFactor = 1 - Math.pow(1 - curLerp, dt / 16.6);
         if (gameState.isMobile) lerpFactor *= 0.8;
@@ -650,10 +722,7 @@ class Player {
                 excessDamageBonus = 1 + (excessPercent * 0.3); // 10% speed = 3% dmg
             }
 
-            // Apply lightning debuff (50% slower = 2x interval)
-            if (this.fireRateDebuffTimer > 0) {
-                finalInterval *= 2.0;
-            }
+            // Note: fireRateDebuffTimer logic removed as per user request to convert it to movement slow
 
             if (this.fireTimer >= finalInterval) {
                 this.shoot(excessDamageBonus);
@@ -667,18 +736,17 @@ class Player {
         let count = Math.floor(this.level * 2 + 1);
         if (gameState.weaponTier === 0 && count > 5) {
             gameState.weaponTier = 1;
-            this.level = 0;
-            count = 1;
-            // Upgrade Buff: Add ally if less than 2
-            if (entities.allies.length < 2) {
+            // Upgrade Effect: Start with 3 bullets and 2 allies to prevent damage drop
+            this.level = 1; 
+            count = 3;
+            while (entities.allies.length < 2) {
                 entities.allies.push(new Ally(player, entities.allies.length));
             }
         } else if (gameState.weaponTier === 1 && count > 5) {
             gameState.weaponTier = 2;
-            this.level = 0;
-            count = 1;
-            // Upgrade Buff: Add ally if less than 2
-            if (entities.allies.length < 2) {
+            this.level = 1; 
+            count = 3;
+            while (entities.allies.length < 2) {
                 entities.allies.push(new Ally(player, entities.allies.length));
             }
         }
@@ -746,15 +814,16 @@ class Bullet {
         this.isDebuff = isDebuff;
         this.isBossSpeedDebuff = false; // Internal flag
         
-        // 10% chance for a debuff to be a speed debuff
-        if (isDebuff && Math.random() < 0.1) {
+        // Task: Probability 8% for a debuff to be a speed debuff (Cyan)
+        if (isDebuff && Math.random() < 0.08) {
             this.isBossSpeedDebuff = true;
         }
 
         this.isDowngrade = isDowngrade;
         this.isAlly = isAlly;
         this.tier = tier; // 0: Yellow, 1: Green, 2: Blue
-        this.radius = isDebuff || isDowngrade ? 10 : (isEnemy ? 6 : 4);
+        // Reduced enemy bullet radius by 30% for visuals/collision consistency
+        this.radius = isDebuff || isDowngrade ? 7 : (isEnemy ? 4.2 : 4);
         this.trail = [];
     }
 
@@ -915,17 +984,18 @@ class Enemy {
 
     draw() {
         ctx.save();
-        const img = this.type === 'small' ? images.enemySmall : images.enemyMedium;
-        // GPU: drawImage with integer coords
-        ctx.drawImage(img, Math.floor(this.x - this.width / 2), Math.floor(this.y - this.height / 2), this.width, this.height);
+        // GPU Optimized: Use pre-rendered textures with integer coordinates
+        const isProtected = this.entryTimer < 800 && this.y < canvas.height / 8;
+        const isBuffed = this.bulletCount > 1;
+        const texName = 'enemy_' + this.type + (isBuffed ? '_buffed' : '') + (isProtected ? '_shield' : '');
+        const tex = TEXTURES[texName];
 
-        // Shield visual - only during active dash/protection
-        if (this.entryTimer < 800 && this.y < canvas.height / 8) {
-            ctx.beginPath();
-            ctx.arc(Math.floor(this.x), Math.floor(this.y), this.width * 0.8, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+        if (tex) {
+            ctx.drawImage(tex, Math.floor(this.x - tex.width / 2), Math.floor(this.y - tex.height / 2));
+        } else {
+            // Fallback to images if texture not ready
+            const img = this.type === 'small' ? images.enemySmall : images.enemyMedium;
+            ctx.drawImage(img, Math.floor(this.x - this.width / 2), Math.floor(this.y - this.height / 2), this.width, this.height);
         }
         ctx.restore();
     }
@@ -1147,21 +1217,26 @@ class Boss {
             this.fireTimer = 0;
         }
 
-        // Lightning Strike Attack
+        // Lightning Strike Attack: Now a fast projectile instead of instant damage
         const lightningInterval = this.isSuper ? 4000 : 7000;
         if (this.lightningTimer > lightningInterval) {
             this.lightningTimer = 0;
-            // Visual feedback
-            entities.explosions.push(new Explosion(player.x, player.y, true));
+            
+            // Calculate angle towards player
+            const dx = player.x - this.x;
+            const dy = player.y - this.y;
+            const angle = Math.atan2(dy, dx);
+            
+            // Spawn a "Cyan" lightning projectile (Speed 6.5, slightly faster than normal 4.5)
+            // Using isDebuff=true and isBossSpeedDebuff flag for the cyan visual
+            const b = new Bullet(this.x, this.y, angle, 200 + (player.maxHp * 0.1), true, true);
+            b.isBossSpeedDebuff = true; // Force cyan visual
+            b.vx = Math.cos(angle) * 6.5; 
+            b.vy = Math.sin(angle) * 6.5;
+            entities.enemyBullets.push(b);
+            
             playSound('debuff');
-            
-            // Damage: 200 + 10% of Max HP
-            const lightningDmg = 200 + (player.maxHp * 0.1);
-            player.takeDamage(lightningDmg);
-            player.fireRateDebuffTimer = 5000; // 5s slow fire rate
-            
-            // Draw lightning line effect (temporary visual)
-            gameState.shake = 15;
+            gameState.shake = 5;
         }
 
         this.debuffTimer += dt;
@@ -1284,7 +1359,8 @@ function killEnemy(e) {
     // Scaling: 50 + 2% of max HP
     player.hp = Math.min(player.maxHp, player.hp + (50 + player.maxHp * 0.02));
 
-    let totalDropChance = e.type === 'small' ? 0.10 : 0.28;
+    // Doubled drop rates as per user request
+    let totalDropChance = e.type === 'small' ? 0.20 : 0.42;
     
     // Applying Luck Fatigue penalty
     if (gameState.streakPenaltyType === 1) totalDropChance *= 0.2; // 80% reduction
@@ -1319,8 +1395,8 @@ function killEnemy(e) {
             else type = 'W';
         }
         
-        // Small chance for 'U' (Upgrade)
-        const uBaseRate = (e.type === 'medium') ? 0.02 : 0.005; 
+        // Small chance for 'U' (Upgrade) - Doubled base rates
+        const uBaseRate = (e.type === 'medium') ? 0.04 : 0.01; 
         if (Math.random() < (uBaseRate * gameState.uDropChanceModifier)) type = 'U';
         
         entities.powerUps.push(new PowerUp(e.x, e.y, type));
@@ -1637,16 +1713,15 @@ function update(dt) {
                 // Boss points scaling: Increase more aggressively after each boss
                 gameState.nextBossScore = gameState.score + 4000 + (gameState.bossCount * 2500);
                 
-                // Drop system: Minimum 1 buff, potentially more if lucky
-                let numDrops = isSuper ? 3 : (Math.floor(Math.random() * 3) + 1); // Super Boss drops more
+                // Drop system: Minimum 2 buffs, potentially more if lucky (Doubled)
+                let numDrops = isSuper ? 6 : (Math.floor(Math.random() * 5) + 2); // Super Boss drops even more
                 
-                // Luck Fatigue penalty for boss drops too? User said "giảm mạnh khả năng nhập buff". 
-                // Let's apply it to boss drop count.
+                // Luck Fatigue penalty for boss drops too
                 if (gameState.streakPenaltyType === 1) numDrops = Math.max(1, Math.floor(numDrops * 0.2));
                 else if (gameState.streakPenaltyType === 2) numDrops = Math.max(1, Math.floor(numDrops * 0.5));
 
                 const dropTypes = ['W', 'H', 'A', 'B', 'S'];
-                let uChance = (isSuper ? 0.30 : 0.04) * gameState.uDropChanceModifier;
+                let uChance = (isSuper ? 0.60 : 0.08) * gameState.uDropChanceModifier; // Doubled U chance for bosses
 
                 for (let i = 0; i < numDrops; i++) {
                     // Force 'W' more often in Yellow Tier for bosses
@@ -1696,8 +1771,8 @@ function update(dt) {
 
         if (distSq < 484) { // 22^2 = 484
             if (eb.isDebuff) {
-                player.slowTimer = 3500;
-                player.jammedTimer = 2500;
+                player.slowTimer = 2000; // 2s movement slow (30%)
+                if (eb.damage > 0) player.takeDamage(eb.damage);
                 entities.enemyBullets.splice(ebi, 1);
             } else if (eb.isDowngrade) {
                 let currentCount = player.level * 2 + 1;
@@ -1799,7 +1874,11 @@ function update(dt) {
 
                 if (gameState.weaponTier < 2) {
                     gameState.weaponTier++;
-                    player.level = 0;
+                    // Starting at level 1 (3 rays) and 2 allies to maintain power level
+                    player.level = 1; 
+                    while (entities.allies.length < 2) {
+                        entities.allies.push(new Ally(player, entities.allies.length));
+                    }
                 } else if (player.level < 2) {
                     player.level = 2; // Jump to max rays for current tier
                 } else {
