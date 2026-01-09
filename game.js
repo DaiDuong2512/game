@@ -136,7 +136,7 @@ const gameState = {
     streakTimer: 0,
     streakPenaltyType: 0, // 0: none, 1: 80%, 2: 50%
     accumulatedBossHp: 0,
-    
+
     // BOOM System Upgraded (Modified for Task 9)
     boomCharges: 1,
     boomMaxCharges: 1, // Max 1, no stacking as per Task 9
@@ -250,7 +250,7 @@ const TEXTURES = {};
 
 function prerender() {
     console.log("Starting GPU optimization (prerendering textures)...");
-    
+
     // Safety check for images
     const requiredImages = ['enemySmall', 'enemyMedium'];
     requiredImages.forEach(key => {
@@ -260,7 +260,7 @@ function prerender() {
             fallback.width = 64; fallback.height = 64;
             const fctx = fallback.getContext('2d');
             fctx.fillStyle = key === 'enemySmall' ? '#ef4444' : '#991b1b';
-            fctx.beginPath(); fctx.arc(32, 32, 20, 0, Math.PI*2); fctx.fill();
+            fctx.beginPath(); fctx.arc(32, 32, 20, 0, Math.PI * 2); fctx.fill();
             images[key] = fallback;
         }
     });
@@ -444,15 +444,15 @@ function prerender() {
                 // 1. Shadow/Glow (GPU Accelerated)
                 c.shadowBlur = isBuffed ? 18 : 12;
                 c.shadowColor = glowColor;
-                
+
                 // 2. Base Image (PNG)
                 c.drawImage(t.img, -w / 2, -h / 2, w, h);
 
                 // 3. Color Tinting (GPU source-atop) - 15% tint (85% PNG remains)
                 c.globalCompositeOperation = 'source-atop';
                 c.fillStyle = mainColor;
-                c.globalAlpha = 0.15; 
-                c.fillRect(-w/2, -h/2, w, h);
+                c.globalAlpha = 0.15;
+                c.fillRect(-w / 2, -h / 2, w, h);
                 c.globalAlpha = 1.0;
                 c.globalCompositeOperation = 'source-over';
             }
@@ -460,7 +460,7 @@ function prerender() {
 
             const suffix = (isBuffed ? '_buffed' : '');
             TEXTURES['enemy_' + t.name + suffix] = canv;
-            
+
             // Shield version
             const sCanv = document.createElement('canvas');
             sCanv.width = canv.width;
@@ -527,7 +527,7 @@ class Ally {
         let offsetX, offsetY;
         const count = entities.allies.length;
         const colIndex = Math.floor(this.index / 2);
-        
+
         if (count === 3) {
             // Special case for exactly 3: Triangle formation (2 sides, 1 rear/center)
             if (this.index === 0) { offsetX = -50; offsetY = -10; }
@@ -547,8 +547,8 @@ class Ally {
         this.x += (tx - this.x) * lerpFactor;
         this.y += (ty - this.y) * lerpFactor;
 
-        // Scale HP with player max HP
-        const targetMaxHp = this.parent.maxHp * 0.3;
+        // Scale HP with player max HP (Consistent with 60% of player HP)
+        const targetMaxHp = this.parent.maxHp * 0.6;
         if (this.maxHp !== targetMaxHp) {
             const ratio = targetMaxHp / this.maxHp;
             this.maxHp = targetMaxHp;
@@ -560,13 +560,13 @@ class Ally {
         const allyFireRate = playerFireRate * 2; // 50% speed = double fire interval
 
         if (this.fireTimer > allyFireRate) {
-            // Reduced boss scaling from 0.4 to 0.15
-            const playerBulletDmg = (player.level <= 5 ? 40 : 40 + (player.level - 5) * 20) * (1 + gameState.bossCount * 0.15);
+            // Updated ally damage scaling to better track player growth
+            const playerBulletDmg = (player.level <= 5 ? 60 : 60 + (player.level - 5) * 45) * (1 + (gameState.bossCount || 0) * 0.15);
 
             // Task: Allies upgrade bullet count (rays) based on Player's weapon tier
             const allyBulletCount = gameState.weaponTier + 1; // Tier 0 (Yellow): 1 ray, 1 (Green): 2 rays, 2 (Blue): 3 rays
             const allySpread = 0.05;
-            
+
             let baseAngle;
             if (entities.boss) {
                 // Auto-target boss: Allies focus fire on the boss
@@ -662,7 +662,7 @@ class Player {
         this.shield = 0;
         this.tilt = 0;
         this.damageMultiplier = 1.0;
-        
+
         // New Mechanics
         this.immunityTimer = 0;
         this.hasteTimer = 0;
@@ -681,7 +681,7 @@ class Player {
         const MAX_CAP_MS = 167;
         let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 6) / hasteMult;
         const finalInterval = Math.max(currentCap, targetInterval);
-        
+
         let excessDamageBonus = 1.0;
         if (targetInterval < currentCap) {
             let excessPercent = (currentCap / targetInterval) - 1;
@@ -690,13 +690,13 @@ class Player {
 
         const rays = Math.floor(this.level * 2 + 1);
         const shotsPerSec = (1000 / finalInterval).toFixed(1);
-        
-        let baseDmg = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + (gameState.bossCount || 0) * 0.15);
-        if (gameState.weaponTier === 1) baseDmg *= 3.0;
-        if (gameState.weaponTier === 2) baseDmg *= 4.0;
-        const excessDmg = Math.max(1, 1 + (this.level - 12) * 0.1);
-        const bossBonus = 1 + (this.level >= 12 ? (this.bossKillDamageBonus || 0) : 0);
-        const finalDmg = Math.floor(baseDmg * this.damageMultiplier * excessDmg * 1.8 * bossBonus * excessDamageBonus);
+
+        let baseDmg = (this.level <= 5 ? 85 : 85 + (this.level - 5) * 60) * (1 + (gameState.bossCount || 0) * 0.15);
+        if (gameState.weaponTier === 1) baseDmg *= 3.5;
+        if (gameState.weaponTier === 2) baseDmg *= 5.0;
+        const excessDmg = Math.max(1, 1 + (this.level - 10) * 0.2);
+        const bossBonus = 1 + (this.level >= 10 ? (this.bossKillDamageBonus || 0) : 0);
+        const finalDmg = Math.floor(baseDmg * this.damageMultiplier * excessDmg * 2.2 * bossBonus * excessDamageBonus);
 
         // Calculate Protection % (Include permanent shield reduction)
         let protection = Math.round(this.permDamageReduction * 100);
@@ -715,9 +715,9 @@ class Player {
     }
 
     takeDamage(amt) {
-        // Task: Enemy damage scaling (1.6x per level)
-        // Level starts at 1, so level 1 has no multiplier (1.6^0 = 1)
-        const scale = Math.pow(1.6, gameState.level - 1);
+        // Task: Enemy damage scaling (Reduced from 1.6 to 1.18 per level to balance late game)
+        // Level starts at 1, so level 1 has no multiplier (1.18^0 = 1)
+        const scale = Math.pow(1.18, gameState.level - 1);
         let totalDmg = amt * scale;
 
         let reductionMult = 1.0;
@@ -802,20 +802,20 @@ class Player {
         if (this.jammedTimer <= 0) {
             this.fireTimer += dt;
             let levelBonus = (gameState.level - 1) * 0.1;
-            
+
             // Task: Cap fire rate at 1 volley per second (1000ms)
             // Anything beyond that is converted: +10% speed bonus = +3% damage
             let baseInterval = 222; // 4.5 shots/s
-            
+
             // Task 3: 2s speed boost at boss start
             let hasteMult = this.hasteTimer > 0 ? 2.0 : 1.0;
             let targetInterval = baseInterval / (1 + levelBonus) / hasteMult;
-            
+
             let finalInterval = targetInterval;
             let excessDamageBonus = 1.0;
             const INITIAL_CAP_MS = 222; // 4.5 shots/s
             const MAX_CAP_MS = 167;     // 6.0 shots/s
-            
+
             // Limit scales from 4.5 at Level 1 to 6.0 at Level 10
             let currentCap = Math.max(MAX_CAP_MS, INITIAL_CAP_MS - (gameState.level - 1) * 6) / hasteMult;
 
@@ -840,14 +840,14 @@ class Player {
         if (gameState.weaponTier === 0 && count > 5) {
             gameState.weaponTier = 1;
             // Upgrade Effect: Start with 3 bullets and 3 allies (Task Update)
-            this.level = 1; 
+            this.level = 1;
             count = 3;
             while (entities.allies.length < 3) {
                 entities.allies.push(new Ally(player, entities.allies.length));
             }
         } else if (gameState.weaponTier === 1 && count > 5) {
             gameState.weaponTier = 2;
-            this.level = 1; 
+            this.level = 1;
             count = 3;
             while (entities.allies.length < 3) {
                 entities.allies.push(new Ally(player, entities.allies.length));
@@ -857,13 +857,16 @@ class Player {
 
         const spread = 0.12; // Reduced spread for higher concentration
         const startAngle = -spread / 2;
-        // Task 5: 8% damage bonus per boss killed, max 90%
-        let bulletDamage = (this.level <= 5 ? 72 : 72 + (this.level - 5) * 36) * (1 + this.bossKillDamageBonus);
-        if (gameState.weaponTier === 1) bulletDamage *= 3.0;
-        if (gameState.weaponTier === 2) bulletDamage *= 4.0;
-        
+        // Updated damage scaling to be consistent with getStats()
+        let bulletDamage = (this.level <= 5 ? 85 : 85 + (this.level - 5) * 60) * (1 + (gameState.bossCount || 0) * 0.15);
+        if (gameState.weaponTier === 1) bulletDamage *= 3.5;
+        if (gameState.weaponTier === 2) bulletDamage *= 5.0;
+
+        const excessDmg = Math.max(1, 1 + (this.level - 10) * 0.2);
+        const bossBonus = 1 + (this.level >= 10 ? (this.bossKillDamageBonus || 0) : 0);
+
         // Apply PowerUp multipliers and the overflow bonus
-        bulletDamage *= (this.damageMultiplier * excessDamageBonus * 1.8);
+        bulletDamage *= (this.damageMultiplier * excessDamageBonus * 2.2 * excessDmg * bossBonus);
 
         for (let i = 0; i < count; i++) {
             const step = count > 1 ? i / (count - 1) : 0.5;
@@ -916,7 +919,7 @@ class Bullet {
         this.isEnemy = isEnemy;
         this.isDebuff = isDebuff;
         this.isBossSpeedDebuff = false; // Internal flag
-        
+
         // Task: Probability 8% for a debuff to be a speed debuff (Cyan)
         if (isDebuff && Math.random() < 0.08) {
             this.isBossSpeedDebuff = true;
@@ -985,12 +988,19 @@ class Bullet {
 }
 
 class Enemy {
-    constructor(x, y, type) {
+    constructor(x, y, type, isFromExplosion = false) {
         this.x = x;
         this.y = y;
         this.type = type;
+        this.isFromExplosion = isFromExplosion;
+        this.isTank = !isFromExplosion && Math.random() < 0.3;
+
         this.width = type === 'small' ? 32 : 55;
         this.height = type === 'small' ? 32 : 55;
+        if (this.isTank) {
+            this.width *= 1.2;
+            this.height *= 1.2;
+        }
 
         // Calculate Player Power Factor (HP Scaling)
         let baseDmg = 25;
@@ -1002,24 +1012,29 @@ class Enemy {
         let dmgRatio = currentDmg / baseDmg;
         let hpMultiplier = 1 + (dmgRatio - 1) * 0.8;
         if (player.level > 1) hpMultiplier += 0.15;
+        if (this.isTank) hpMultiplier *= 4.0; // Significant HP boost for tanks
 
         const baseHp = type === 'small' ? 100 : 400;
         this.hp = baseHp * gameState.difficulty * hpMultiplier;
         this.maxHp = this.hp; // Store max for health bar
 
-        // Calculate Contact/Bullet Damage for display
-        this.contactDmg = Math.floor(10 * Math.pow(1.6, gameState.level - 1));
+        // Calculate Contact/Bullet Damage for display (Reduced scaling from 1.6 to 1.18)
+        this.contactDmg = Math.floor(10 * Math.pow(1.18, gameState.level - 1));
 
         let levelSpeedBonus = (gameState.level - 1) * 0.1;
         this.speed = (type === 'small' ? 0.75 : 0.55) + levelSpeedBonus;
+        if (this.isTank) this.speed *= 0.7; // Tanks are slower
+
         this.vx = type === 'medium' ? (Math.random() > 0.5 ? 0.45 : -0.45) : 0;
         this.fireTimer = Math.random() * 1500;
 
         // Task 3: Enemy bullet count 1,2,3 when player > 3 bullets (player.level > 1)
+        // User update: Strong enemies (multiple bullets) now only 12% chance
         this.bulletCount = 1;
-        const playerBulletsCount = Math.floor(player.level * 2 + 1);
-        if (playerBulletsCount > 3) {
-            this.bulletCount = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3
+        if (Math.floor(player.level * 2 + 1) > 3) {
+            if (Math.random() < 0.12) {
+                this.bulletCount = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3
+            }
         }
 
         // Task 4: Dash and Shield (Adjusted: stop at 1/8 of screen height)
@@ -1058,8 +1073,8 @@ class Enemy {
         }
 
         if (this.fireTimer > fireRate) {
-            // Damage scaling: base 80 -> 156 (+50% increase from previous 104) then increased by 1.6x after each level
-            const levelDmgFactor = Math.pow(1.6, gameState.level - 1);
+            // Damage scaling: base 80 -> 156 (+50% increase from previous 104) then increased by 1.18x after each level
+            const levelDmgFactor = Math.pow(1.18, gameState.level - 1);
             const bulletDmg = 80 * 1.3 * 1.5 * levelDmgFactor;
 
             if (this.bulletCount > 1) {
@@ -1083,7 +1098,7 @@ class Enemy {
         // Task 4: Shield 90% only during entry (Ends at 0.8s OR when reaching 1/8 screen height)
         let reduction = 0;
         if (this.entryTimer < 800 && this.y < canvas.height / 8) reduction = 0.9;
-        
+
         // Medium enemies get 30% damage reduction when boss is present
         if (entities.boss && this.type === 'medium') reduction = Math.max(reduction, 0.3);
 
@@ -1099,7 +1114,12 @@ class Enemy {
         const tex = TEXTURES[texName];
 
         if (tex) {
+            // Visualize Tank status (Darker or slightly different tint)
+            if (this.isTank) {
+                ctx.filter = 'brightness(0.7) contrast(1.2) sepia(0.3) hue-rotate(-20deg)';
+            }
             ctx.drawImage(tex, Math.floor(this.x - tex.width / 2), Math.floor(this.y - tex.height / 2));
+            if (this.isTank) ctx.filter = 'none';
         } else {
             // Fallback to images if texture not ready
             const img = this.type === 'small' ? images.enemySmall : images.enemyMedium;
@@ -1193,7 +1213,8 @@ class Missile {
 
     hit(target) {
         const pLevel = player.level;
-        const currentBulletDmg = (pLevel <= 5 ? 40 : 40 + (pLevel - 5) * 20) * (1 + gameState.bossCount * 0.4) * player.damageMultiplier;
+        // Updated missile damage to match new player damage curve
+        const currentBulletDmg = (pLevel <= 5 ? 85 : 85 + (pLevel - 5) * 60) * (1 + (gameState.bossCount || 0) * 0.4) * player.damageMultiplier;
         const missileDmg = currentBulletDmg * gameState.boomDamageMultiplier;
 
         // Boom heal on hit as requested
@@ -1204,7 +1225,7 @@ class Missile {
             finalDamage = missileDmg * 5;
             // Task: Boss Resistance (20% from allies, 80% from player)
             finalDamage *= (this.isAlly ? 0.2 : 0.8);
-            
+
             target.hp -= finalDamage;
             this.bounces = gameState.maxMissileBounces; // Force stop after boss hit
             if (target.hp <= 0) {
@@ -1258,9 +1279,9 @@ class Boss {
         // Progressive HP scaling (Significantly increased from level 2 onwards)
         const scalingFactor = gameState.bossCount >= 1 ? 25000 : 12000;
         const baseHp = 8000 + (gameState.bossCount * scalingFactor);
-        
+
         // Task: HP stacking (previous boss HP + current scaling)
-        let finalMaxHp = baseHp + gameState.accumulatedBossHp; 
+        let finalMaxHp = baseHp + gameState.accumulatedBossHp;
         if (this.isSuper) finalMaxHp *= 4.5;
 
         // Task: Increase Boss HP > level 2 by 15%
@@ -1311,7 +1332,7 @@ class Boss {
     update(dt) {
         if (this.spawnProtectionTimer > 0) this.spawnProtectionTimer -= dt;
         const timeFactor = dt / 16.6;
-        
+
         if (this.y < this.targetY) {
             // Fast arrival in first 1s (spawnProtection is 5s, so first 1s is 5000->4000)
             const arrivalSpeed = (this.spawnProtectionTimer > 4000) ? 7 : 0.45;
@@ -1335,11 +1356,11 @@ class Boss {
         }
 
         this.fireTimer += dt;
-        
+
         // Task: Boss fire rate 0.6/s (~1667ms), cap at Level 10 (which is Boss 10)
         const bossFireRate = 2000 / (1 + Math.min(9, gameState.bossCount) * 0.2);
         let finalFireRate = this.isSuper ? bossFireRate * 0.7 : bossFireRate;
-        finalFireRate = Math.max(1667, finalFireRate); 
+        finalFireRate = Math.max(1667, finalFireRate);
 
         if (this.fireTimer > finalFireRate) { // Progressive fire rate
             const spreadCount = this.isSuper ? 5 : 3;
@@ -1352,7 +1373,7 @@ class Boss {
         // Lightning Strike Attack removed as per request (Tia giảm tốc)
 
         this.debuffTimer += dt;
-        if (this.debuffTimer > 6000) { 
+        if (this.debuffTimer > 6000) {
             // Task: Purple rays sparser (reduced from 16 to 10)
             const rayCount = 10;
             for (let i = 0; i < rayCount; i++) {
@@ -1414,7 +1435,7 @@ class PowerUp {
 
     draw() {
         const tex = TEXTURES['powerup_' + this.type];
-        
+
         // Draw a distinct circular boundary to distinguish from bullets
         ctx.save();
         ctx.beginPath();
@@ -1423,7 +1444,7 @@ class PowerUp {
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]); // Dashed line for a "collectible" feel
         ctx.stroke();
-        
+
         // Outer glow
         ctx.shadowBlur = 10;
         ctx.shadowColor = 'white';
@@ -1475,7 +1496,7 @@ function killEnemy(e) {
 
     // Doubled drop rates as per user request
     let totalDropChance = e.type === 'small' ? 0.20 : 0.42;
-    
+
     // Applying Luck Fatigue penalty
     if (gameState.streakPenaltyType === 1) totalDropChance *= 0.2; // 80% reduction
     else if (gameState.streakPenaltyType === 2) totalDropChance *= 0.5; // 50% reduction
@@ -1508,20 +1529,20 @@ function killEnemy(e) {
             else if (innerRand < 0.85) type = 'S';
             else type = 'W';
         }
-        
+
         // Small chance for 'U' (Upgrade) - Doubled base rates
-        const uBaseRate = (e.type === 'medium') ? 0.04 : 0.01; 
+        const uBaseRate = (e.type === 'medium') ? 0.04 : 0.01;
         if (Math.random() < (uBaseRate * gameState.uDropChanceModifier)) type = 'U';
-        
+
         entities.powerUps.push(new PowerUp(e.x, e.y, type));
     }
 
     // Minion Spawn on Death
     if (e.type === 'medium') {
-        const spawnChance = entities.boss ? 0.8 : 0.2;
+        const spawnChance = entities.boss ? 0.3 : 0.13; // Reduced from 0.8 / 0.2 to boss: 30% / normal: 13%
         if (Math.random() < spawnChance) {
             for (let i = 0; i < 2; i++) {
-                entities.enemies.push(new Enemy(e.x + (i - 0.5) * 40, e.y, 'small'));
+                entities.enemies.push(new Enemy(e.x + (i - 0.5) * 40, e.y, 'small', true));
             }
         }
     }
@@ -1598,14 +1619,14 @@ function updateUI() {
                 bossRewardEl.innerText = entities.boss.isSuper ? "Reward: Super Dmg & HP" : "Reward: +15% HP & Dmg";
             }
         } else {
-            const nextBossIdx = gameState.bossCount; 
+            const nextBossIdx = gameState.bossCount;
             const isSuper = (nextBossIdx + 1) % 5 === 0;
             const scalingFactor = nextBossIdx >= 1 ? 25000 : 12000;
             const baseHp = 8000 + (nextBossIdx * scalingFactor);
             let predictedHp = baseHp + (gameState.accumulatedBossHp || 0);
             if (isSuper) predictedHp *= 4.5;
             if (nextBossIdx >= 1) predictedHp *= 1.15;
-            
+
             nextBossHpEl.innerText = `HP: ${formatNumber(predictedHp)}`;
             if (bossRewardEl) {
                 bossRewardEl.innerText = isSuper ? "Reward: Super HP & Dmg Boost" : "Reward: +15% HP & Dmg";
@@ -1641,7 +1662,7 @@ function updateUI() {
     const elDamage = document.getElementById('mini-damage');
     const elDef = document.getElementById('mini-def');
     const elAlly = document.getElementById('mini-ally');
-    
+
     if (elSpeed) elSpeed.innerText = gameStats.shotsPerSec + '/s';
     if (elDamage) elDamage.innerText = formatNumber(gameStats.finalDmg);
     if (elDef) elDef.innerText = gameStats.protection + '%';
@@ -1677,16 +1698,16 @@ function togglePause() {
         if (passiveList) {
             passiveList.innerHTML = '';
             const perks = [];
-            
-            if (gameState.level > 1) perks.push({text: `Lvl ${gameState.level}`, detail: `+${Math.round((gameState.level-1)*10)}% Spd`, color: 'bg-slate-700'});
-            if (gameState.weaponTier === 1) perks.push({text: 'Green Tier', detail: '3.0x Power', color: 'bg-emerald-600'});
-            if (gameState.weaponTier === 2) perks.push({text: 'Blue Tier', detail: '4.0x Power', color: 'bg-blue-600'});
-            if (entities.allies.length > 2) perks.push({text: 'Ally Shield', detail: '-10% Damage', color: 'bg-cyan-600'});
-            if (entities.allies.length === 6) perks.push({text: 'Guardian', detail: '-20% Damage', color: 'bg-indigo-600'});
-            if (gameState.bossCount > 0) perks.push({text: `Boss Slayer`, detail: `+${gameState.bossCount*15}% HP`, color: 'bg-red-600'});
-            if (player.damageReductionTimer > 0) perks.push({text: 'Shielding', detail: '-30% Damage', color: 'bg-blue-400'});
-            if (player.permDamageReduction > 0) perks.push({text: 'Eternal Shield', detail: `-${Math.round(player.permDamageReduction * 100)}% DMG`, color: 'bg-amber-600'});
-            
+
+            if (gameState.level > 1) perks.push({ text: `Lvl ${gameState.level}`, detail: `+${Math.round((gameState.level - 1) * 10)}% Spd`, color: 'bg-slate-700' });
+            if (gameState.weaponTier === 1) perks.push({ text: 'Green Tier', detail: '3.0x Power', color: 'bg-emerald-600' });
+            if (gameState.weaponTier === 2) perks.push({ text: 'Blue Tier', detail: '4.0x Power', color: 'bg-blue-600' });
+            if (entities.allies.length > 2) perks.push({ text: 'Ally Shield', detail: '-10% Damage', color: 'bg-cyan-600' });
+            if (entities.allies.length === 6) perks.push({ text: 'Guardian', detail: '-20% Damage', color: 'bg-indigo-600' });
+            if (gameState.bossCount > 0) perks.push({ text: `Boss Slayer`, detail: `+${gameState.bossCount * 15}% HP`, color: 'bg-red-600' });
+            if (player.damageReductionTimer > 0) perks.push({ text: 'Shielding', detail: '-30% Damage', color: 'bg-blue-400' });
+            if (player.permDamageReduction > 0) perks.push({ text: 'Eternal Shield', detail: `-${Math.round(player.permDamageReduction * 100)}% DMG`, color: 'bg-amber-600' });
+
             perks.forEach(p => {
                 const badge = document.createElement('div');
                 badge.className = `${p.color} text-[8px] px-2 py-1 rounded-lg text-white font-bold flex flex-col items-center min-w-[60px]`;
@@ -1734,7 +1755,7 @@ function update(dt) {
     if (gameState.level > gameState.lastLevel) {
         player.maxHp += 400; // Increased scaling
         player.hp = Math.min(player.maxHp, player.hp + 500); // Increased heal
-        
+
         // Task: Sync allies with player growth
         entities.allies.forEach(ally => {
             ally.maxHp += 200; // Allies get 50% of player growth
@@ -1800,7 +1821,7 @@ function update(dt) {
     // Task: Dynamic mob limits
     // Normal mode: Random cap 3-6 | Boss fight: Max 2 Medium units during boss
     let mobCap = gameState.isBossFight ? 2 : (3 + (Math.floor(gameState.score / 800) % 4));
-    
+
     if (spawnTimer > Math.max(500, spawnBase - gameState.score / 20)) {
         if (entities.enemies.length < mobCap) {
             if (gameState.isBossFight) {
@@ -1910,13 +1931,13 @@ function update(dt) {
                 data = { dmg: 0, count: 0, x: hitEntity.x, y: hitEntity.y, allyDmg: 0 };
                 frameHits.set(hitEntity, data);
             }
-            
+
             let currentDmg = b.damage;
             if (hitEntity === entities.boss) {
                 // Task: Boss Resistance (20% from allies, 80% from player)
                 currentDmg = b.isAlly ? b.damage * 0.2 : b.damage * 0.8;
             }
-            
+
             data.dmg += currentDmg;
             data.count++;
             entities.bullets.splice(bi, 1);
@@ -1945,10 +1966,10 @@ function update(dt) {
                 gameState.accumulatedBossHp += entities.boss.maxHp;
                 // Boss points scaling: Increase more aggressively after each boss
                 gameState.nextBossScore = gameState.score + 4000 + (gameState.bossCount * 2500);
-                
+
                 // Drop system: Minimum 2 buffs, potentially more if lucky (Doubled)
                 let numDrops = isSuper ? 6 : (Math.floor(Math.random() * 5) + 2); // Super Boss drops even more
-                
+
                 // Luck Fatigue penalty for boss drops too
                 if (gameState.streakPenaltyType === 1) numDrops = Math.max(1, Math.floor(numDrops * 0.2));
                 else if (gameState.streakPenaltyType === 2) numDrops = Math.max(1, Math.floor(numDrops * 0.5));
@@ -1968,35 +1989,35 @@ function update(dt) {
                     } else {
                         type = dropTypes[Math.floor(Math.random() * dropTypes.length)];
                     }
-                    entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops-1)/2) * 40, entities.boss.y, type));
+                    entities.powerUps.push(new PowerUp(entities.boss.x + (i - (numDrops - 1) / 2) * 40, entities.boss.y, type));
                 }
 
                 // Boss death spawns minions (Limit based on level breakpoints: 1,3,5,7,9, Max 5)
                 const deadBossMinions = Math.min(5, 1 + Math.floor(gameState.bossCount / 2));
                 for (let i = 0; i < deadBossMinions; i++) {
-                    entities.enemies.push(new Enemy(entities.boss.x + (i - (deadBossMinions-1)/2) * 80, entities.boss.y + 50, 'medium'));
+                    entities.enemies.push(new Enemy(entities.boss.x + (i - (deadBossMinions - 1) / 2) * 80, entities.boss.y + 50, 'medium', true));
                 }
-                
+
                 // NEW: Excitement Buff (Double fire rate for 2s)
                 player.hasteTimer = 2000;
                 playSound('levelUp'); // Use levelUp sound for excitement feedback
-                
+
                 gameState.isBossFight = false;
-                
+
                 // Task 4 & 5: Post-boss rewards
                 // Permanent HP increase (15% of defeated boss's max HP)
                 const hpBonus = entities.boss.maxHp * 0.15;
                 player.maxHp += hpBonus;
-                player.hp = Math.min(player.maxHp, player.hp + hpBonus); 
+                player.hp = Math.min(player.maxHp, player.hp + hpBonus);
 
-                // Damage bonus scaling (+8% per boss, max 90%)
-                player.bossKillDamageBonus = Math.min(0.9, player.bossKillDamageBonus + 0.08);
-                
-                // Ally damage ratio scaling (+8% of player damage, max 90% total ratio)
-                player.allyDamageRatio = Math.min(0.9, player.allyDamageRatio + 0.08);
+                // Damage bonus scaling (Increased from 8% to 15% per boss, max 1.5)
+                player.bossKillDamageBonus = Math.min(1.5, player.bossKillDamageBonus + 0.15);
 
-                // Flat 15% damage multiplier upgrade for each boss win
-                player.damageMultiplier += 0.15;
+                // Ally damage ratio scaling (+12% of player damage, max 1.0 ratio)
+                player.allyDamageRatio = Math.min(1.0, player.allyDamageRatio + 0.12);
+
+                // Flat 25% damage multiplier upgrade for each boss win
+                player.damageMultiplier += 0.25;
 
                 entities.boss = null;
                 updateUI();
@@ -2021,7 +2042,7 @@ function update(dt) {
         }
 
         // Task 2: Hitbox reduced 30% (22 -> 15.4, 15.4^2 = 237)
-        if (distSq < 237) { 
+        if (distSq < 237) {
             if (eb.isDebuff || eb.isBossSpeedDebuff) {
                 // Task 3: 2s immunity at boss start
                 if (player.immunityTimer <= 0) {
@@ -2081,7 +2102,7 @@ function update(dt) {
 
         if (dx * dx + dy * dy < 1444) { // 38^2 = 1444
             playSound('powerup');
-            
+
             // Luck Fatigue System: 3 buffs trigger reduction
             gameState.buffStreak++;
             if (gameState.buffStreak >= 3) {
@@ -2091,7 +2112,7 @@ function update(dt) {
 
             if (p.type === 'W') {
                 player.level += 0.5;
-                player.damageMultiplier *= 1.05; // Reduced from 1.1 (Upgrade damage by 5% for each bullet upgrade buff)
+                player.damageMultiplier *= 1.12; // Increased from 1.05 (Upgrade damage by 12% for each bullet upgrade buff)
 
                 // Task: Ensure transition from 5 rays (level 2.0) to 3 rays (level 1.0) of next tier
                 let count = Math.floor(player.level * 2 + 1);
@@ -2103,35 +2124,35 @@ function update(dt) {
                     }
                 }
             } else if (p.type === 'H') {
-                // Task 1: Increase max HP by 8% and heal
-                player.maxHp *= 1.08;
-                // Scaling: 250 + 10% of max HP
-                const healAmt = 250 + player.maxHp * 0.1;
+                // Task 1: Increase max HP by 12% and heal
+                player.maxHp *= 1.12;
+                // Scaling: 400 + 15% of max HP
+                const healAmt = 400 + player.maxHp * 0.15;
                 player.hp = Math.min(player.maxHp, player.hp + healAmt);
                 for (let ai = 0; ai < entities.allies.length; ai++) {
-                    // Task: Increase Ally heal logic (70% of healAmt, was 30%)
-                    entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + healAmt * 0.7);
+                    // Task: Increase Ally heal logic (80% of healAmt)
+                    entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + healAmt * 0.8);
                 }
             } else if (p.type === 'A') {
                 if (entities.allies.length < 6) {
                     entities.allies.push(new Ally(player, entities.allies.length));
                 } else {
-                    // Task: If already 6 allies, upgrade all allies HP by 10% (was 3%)
+                    // Task: If already 6 allies, upgrade all allies HP by 15%
                     entities.allies.forEach(ally => {
-                        ally.maxHp *= 1.10;
-                        ally.hp *= 1.10; 
+                        ally.maxHp *= 1.15;
+                        ally.hp *= 1.15;
                     });
                     // Also heal a bit more
                     for (let ai = 0; ai < entities.allies.length; ai++) {
-                        entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + 300);
+                        entities.allies[ai].hp = Math.min(entities.allies[ai].maxHp, entities.allies[ai].hp + 500);
                     }
                 }
             } else if (p.type === 'B') {
-                gameState.boomChargeSpeed = Math.max(2000, gameState.boomChargeSpeed - 500);
-                if (gameState.maxMissileBounces < 3) {
+                gameState.boomChargeSpeed = Math.max(1500, gameState.boomChargeSpeed - 600);
+                if (gameState.maxMissileBounces < 4) {
                     gameState.maxMissileBounces++;
                 } else {
-                    gameState.boomDamageMultiplier += 0.1; // +10% damage if already at max bounces
+                    gameState.boomDamageMultiplier += 0.2; // +20% damage if already at max bounces
                 }
             } else if (p.type === 'U') {
                 // Decay 'U' (Weapon Upgrade) drop rate
@@ -2141,7 +2162,7 @@ function update(dt) {
                     gameState.weaponTier++;
                     // Task: Upgrade tier while preserving/improving rays
                     // 1 yellow (lvl 0) -> 3 green (lvl 1.0) | 4 yellow (lvl 1.5) -> 4 green (lvl 1.5)
-                    player.level = Math.max(1.0, player.level); 
+                    player.level = Math.max(1.0, player.level);
                     while (entities.allies.length < 3) {
                         entities.allies.push(new Ally(player, entities.allies.length));
                     }
@@ -2149,16 +2170,16 @@ function update(dt) {
                     player.level = 2; // Jump to max rays for current tier
                 } else {
                     // Already at max weapon tier and max rays: increase damage instead
-                    player.damageMultiplier += 0.15; // Reduced from 0.8
+                    player.damageMultiplier += 0.4; // Previously increased from 0.15
                 }
             } else if (p.type === 'S') {
-                // Task 6: Shield buff 2s resistance + 5% HP power
-                player.shield = 250 + player.maxHp * 0.15; // Increased power (+5%)
-                player.damageReductionTimer = 2000; // 2s resistance
-                
-                // NEW: Permanent 5% Damage Reduction (Max 40%)
-                if (player.permDamageReduction < 0.4) {
-                    player.permDamageReduction = Math.min(0.4, player.permDamageReduction + 0.05);
+                // Task 6: Shield buff 2.5s resistance + 25% HP power
+                player.shield = 400 + player.maxHp * 0.25;
+                player.damageReductionTimer = 2500; // 2.5s resistance
+
+                // NEW: Permanent 5% Damage Reduction (Max 50%)
+                if (player.permDamageReduction < 0.5) {
+                    player.permDamageReduction = Math.min(0.5, player.permDamageReduction + 0.05);
                 }
                 playSound('powerup');
             }
@@ -2225,6 +2246,7 @@ function draw() {
 
         let y = (gameState.bgY % dH + dH) % dH;
         ctx.imageSmoothingEnabled = false;
+        ctx.globalAlpha = 0.7; // Reduce background brightness by 30%
 
         const iy = Math.floor(y);
         const idx = Math.floor(dX);
@@ -2233,6 +2255,7 @@ function draw() {
 
         ctx.drawImage(img, idx, iy, idw, idh);
         ctx.drawImage(img, idx, iy - idh, idw, idh);
+        ctx.globalAlpha = 1.0;
     }
 
     // 4. Draw entities (Using for loops for speed)
@@ -2322,7 +2345,7 @@ function setupEventListeners() {
             // Use visualViewport if available for more stability on mobile browsers with dynamic bars
             const w = window.visualViewport ? window.visualViewport.width : window.innerWidth;
             const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-            
+
             // On mobile, explicitly set body height to prevent jumpy layout with dvh
             if (gameState.isMobile) {
                 document.body.style.height = h + 'px';
@@ -2331,7 +2354,7 @@ function setupEventListeners() {
 
             canvas.width = container.clientWidth;
             canvas.height = container.clientHeight;
-            
+
             // Always scroll to top on resize to prevent browser-level shifts
             window.scrollTo(0, 0);
         }
@@ -2561,7 +2584,7 @@ function setupEventListeners() {
  */
 function saveGame() {
     if (!gameState.isStarted || gameState.isGameOver) return;
-    
+
     const saveData = {
         gameState: {
             score: gameState.score,
@@ -2588,13 +2611,13 @@ function saveGame() {
 function loadGame() {
     const raw = localStorage.getItem('space_shooter_save_game');
     if (!raw) return false;
-    
+
     try {
         const data = JSON.parse(raw);
-        
+
         // Restore Game State
         Object.assign(gameState, data.gameState);
-        
+
         // Restore Player
         player.hp = data.player.hp;
         player.maxHp = data.player.maxHp;
@@ -2602,13 +2625,13 @@ function loadGame() {
         player.damageMultiplier = data.player.damageMultiplier;
         player.bossKillDamageBonus = data.player.bossKillDamageBonus;
         player.permDamageReduction = data.player.permDamageReduction || 0;
-        
+
         // Restore Allies
         entities.allies = [];
         for (let i = 0; i < (data.allyCount || 0); i++) {
             entities.allies.push(new Ally(player, i));
         }
-        
+
         updateUI();
         return true;
     } catch (e) {
