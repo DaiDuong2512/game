@@ -556,12 +556,14 @@ class Ally {
         }
 
         this.fireTimer += dt;
-        const playerFireRate = 160 / (1 + (gameState.level - 1) * 0.1);
-        const allyFireRate = playerFireRate * 2; // 50% speed = double fire interval
+        const playerStats = this.parent.getStats();
+        // Calculate interval from shotsPerSec (1000/sps)
+        const playerInterval = 1000 / Math.max(0.1, parseFloat(playerStats.shotsPerSec));
+        const allyFireRate = playerInterval * 2; // 50% speed = double interval
 
         if (this.fireTimer > allyFireRate) {
-            // Updated ally damage scaling to better track player growth
-            const playerBulletDmg = (player.level <= 5 ? 60 : 60 + (player.level - 5) * 45) * (1 + (gameState.bossCount || 0) * 0.15);
+            // Use player's actual final damage for 50% calculation
+            const baseDamage = playerStats.finalDmg;
 
             // Task: Allies upgrade bullet count (rays) based on Player's weapon tier
             const allyBulletCount = gameState.weaponTier + 1; // Tier 0 (Yellow): 1 ray, 1 (Green): 2 rays, 2 (Blue): 3 rays
@@ -586,7 +588,7 @@ class Ally {
                     this.x,
                     this.y,
                     baseAngle + offsetAngle,
-                    playerBulletDmg * player.allyDamageRatio,
+                    baseDamage * this.parent.allyDamageRatio, // Updated to use ratio (starts at 0.5)
                     false,
                     false,
                     gameState.weaponTier,
@@ -669,7 +671,7 @@ class Player {
         this.damageReductionTimer = 0;
         this.bossKillDamageBonus = 0;
         this.permDamageReduction = 0; // NEW: Permanent reduction from Shields (Max 40%)
-        this.allyDamageRatio = 0.20; // Task: Build start at 20%
+        this.allyDamageRatio = 0.50; // Increased default to 50%
     }
 
     getStats() {
@@ -1490,14 +1492,14 @@ function createExplosion(x, y, shouldShake = false) {
 function killEnemy(e) {
     if (e.hp > 0) return; // safety
     createExplosion(e.x, e.y);
-    gameState.score += e.type === 'small' ? 50 : 120;
+    gameState.score += e.type === 'small' ? 55 : 124;
 
     // Healing - Increased heal for Boom or just general?
     // Scaling: 50 + 2% of max HP
     player.hp = Math.min(player.maxHp, player.hp + (50 + player.maxHp * 0.02));
 
     // Doubled drop rates as per user request
-    let totalDropChance = e.type === 'small' ? 0.20 : 0.42;
+    let totalDropChance = e.type === 'small' ? 0.18 : 0.36
 
     // Applying Luck Fatigue penalty
     if (gameState.streakPenaltyType === 1) totalDropChance *= 0.2; // 80% reduction
@@ -1964,8 +1966,7 @@ function update(dt) {
                 createExplosion(entities.boss.x, entities.boss.y, true);
                 gameState.score += 6000; // Increase score significantly to trigger an immediate level up
                 gameState.bossCount++;
-                // Save boss HP for next boss stacking
-                gameState.accumulatedBossHp += entities.boss.maxHp;
+                gameState.accumulatedBossHp += entities.boss.maxHp * 0.6;
                 // Boss points scaling: Increase more aggressively after each boss
                 gameState.nextBossScore = gameState.score + 4000 + (gameState.bossCount * 2500);
 
