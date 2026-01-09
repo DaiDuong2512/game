@@ -715,9 +715,9 @@ class Player {
     }
 
     takeDamage(amt) {
-        // Task: Enemy damage scaling (Adjusted from 1.18 to 1.44 per level)
-        // Level starts at 1, so level 1 has no multiplier (1.44^0 = 1)
-        const scale = Math.pow(1.44, gameState.level - 1);
+        // Task: Enemy damage scaling (Adjusted from 1.44 to 1.23 per level)
+        // Level starts at 1, so level 1 has no multiplier (1.23^0 = 1)
+        const scale = Math.pow(1.23, gameState.level - 1);
         let totalDmg = amt * scale;
 
         let reductionMult = 1.0;
@@ -1015,13 +1015,13 @@ class Enemy {
         if (this.isTank) hpMultiplier *= 5.0; // Increased Tank HP from 4x to 5x
 
         const baseHp = type === 'small' ? 250 : 800; // Increased base HP (was 100/400)
-        // Task: Enemy HP scaling (Added 1.44x power scaling per level)
-        const levelHpScale = Math.pow(1.44, gameState.level - 1);
+        // Task: Enemy HP scaling (Adjusted from 1.44x to 1.23x power scaling per level)
+        const levelHpScale = Math.pow(1.23, gameState.level - 1);
         this.hp = baseHp * gameState.difficulty * hpMultiplier * levelHpScale;
         this.maxHp = this.hp; // Store max for health bar
 
-        // Calculate Contact/Bullet Damage for display (Adjusted scaling from 1.18 to 1.44)
-        this.contactDmg = Math.floor(10 * Math.pow(1.44, gameState.level - 1));
+        // Calculate Contact/Bullet Damage for display (Adjusted scaling from 1.44 to 1.23)
+        this.contactDmg = Math.floor(10 * Math.pow(1.18, gameState.level - 1));
 
         let levelSpeedBonus = (gameState.level - 1) * 0.1;
         this.speed = (type === 'small' ? 0.75 : 0.55) + levelSpeedBonus;
@@ -1075,8 +1075,8 @@ class Enemy {
         }
 
         if (this.fireTimer > fireRate) {
-            // Damage scaling: base 80 -> 156 then increased by 1.44x after each level
-            const levelDmgFactor = Math.pow(1.44, gameState.level - 1);
+            // Damage scaling: base 80 -> 156 then increased by 1.23x after each level
+            const levelDmgFactor = Math.pow(1.23, gameState.level - 1);
             const bulletDmg = 80 * 1.3 * 1.5 * levelDmgFactor;
 
             if (this.bulletCount > 1) {
