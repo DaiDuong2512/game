@@ -715,9 +715,9 @@ class Player {
     }
 
     takeDamage(amt) {
-        // Task: Enemy damage scaling (Reduced from 1.6 to 1.18 per level to balance late game)
-        // Level starts at 1, so level 1 has no multiplier (1.18^0 = 1)
-        const scale = Math.pow(1.18, gameState.level - 1);
+        // Task: Enemy damage scaling (Adjusted from 1.18 to 1.44 per level)
+        // Level starts at 1, so level 1 has no multiplier (1.44^0 = 1)
+        const scale = Math.pow(1.44, gameState.level - 1);
         let totalDmg = amt * scale;
 
         let reductionMult = 1.0;
@@ -1003,23 +1003,25 @@ class Enemy {
         }
 
         // Calculate Player Power Factor (HP Scaling)
-        let baseDmg = 25;
+        let baseDmg = 85;
         let pLevel = player.level;
-        let currentDmg = pLevel <= 5 ? 25 : 25 + (pLevel - 5) * 15;
-        if (gameState.weaponTier === 1) currentDmg *= 3;
-        if (gameState.weaponTier === 2) currentDmg *= 4;
+        let currentDmg = pLevel <= 5 ? 85 : 85 + (pLevel - 5) * 60;
+        if (gameState.weaponTier === 1) currentDmg *= 3.5;
+        if (gameState.weaponTier === 2) currentDmg *= 5.0;
 
         let dmgRatio = currentDmg / baseDmg;
-        let hpMultiplier = 1 + (dmgRatio - 1) * 0.8;
-        if (player.level > 1) hpMultiplier += 0.15;
-        if (this.isTank) hpMultiplier *= 4.0; // Significant HP boost for tanks
+        let hpMultiplier = 1 + (dmgRatio - 1) * 1.2; // Increased multiplier from 0.8 to 1.2
+        if (player.level > 1) hpMultiplier += 0.60; // Increased from 0.15
+        if (this.isTank) hpMultiplier *= 5.0; // Increased Tank HP from 4x to 5x
 
-        const baseHp = type === 'small' ? 100 : 400;
-        this.hp = baseHp * gameState.difficulty * hpMultiplier;
+        const baseHp = type === 'small' ? 250 : 800; // Increased base HP (was 100/400)
+        // Task: Enemy HP scaling (Added 1.44x power scaling per level)
+        const levelHpScale = Math.pow(1.44, gameState.level - 1);
+        this.hp = baseHp * gameState.difficulty * hpMultiplier * levelHpScale;
         this.maxHp = this.hp; // Store max for health bar
 
-        // Calculate Contact/Bullet Damage for display (Reduced scaling from 1.6 to 1.18)
-        this.contactDmg = Math.floor(10 * Math.pow(1.18, gameState.level - 1));
+        // Calculate Contact/Bullet Damage for display (Adjusted scaling from 1.18 to 1.44)
+        this.contactDmg = Math.floor(10 * Math.pow(1.44, gameState.level - 1));
 
         let levelSpeedBonus = (gameState.level - 1) * 0.1;
         this.speed = (type === 'small' ? 0.75 : 0.55) + levelSpeedBonus;
@@ -1073,8 +1075,8 @@ class Enemy {
         }
 
         if (this.fireTimer > fireRate) {
-            // Damage scaling: base 80 -> 156 (+50% increase from previous 104) then increased by 1.18x after each level
-            const levelDmgFactor = Math.pow(1.18, gameState.level - 1);
+            // Damage scaling: base 80 -> 156 then increased by 1.44x after each level
+            const levelDmgFactor = Math.pow(1.44, gameState.level - 1);
             const bulletDmg = 80 * 1.3 * 1.5 * levelDmgFactor;
 
             if (this.bulletCount > 1) {
@@ -1276,17 +1278,17 @@ class Boss {
         // Check if it's a Super Boss (every 5th boss)
         this.isSuper = (gameState.bossCount + 1) % 5 === 0;
 
-        // Progressive HP scaling (Significantly increased from level 2 onwards)
-        const scalingFactor = gameState.bossCount >= 1 ? 25000 : 12000;
-        const baseHp = 8000 + (gameState.bossCount * scalingFactor);
+        // Progressive HP scaling (Significantly increased to match player damage)
+        const scalingFactor = gameState.bossCount >= 1 ? 75000 : 35000;
+        const baseHp = 25000 + (gameState.bossCount * scalingFactor);
 
         // Task: HP stacking (previous boss HP + current scaling)
         let finalMaxHp = baseHp + gameState.accumulatedBossHp;
-        if (this.isSuper) finalMaxHp *= 4.5;
+        if (this.isSuper) finalMaxHp *= 6.5;
 
-        // Task: Increase Boss HP > level 2 by 15%
+        // Task: Increase Boss HP > level 2 by 25% (was 15%)
         if (gameState.bossCount >= 1) { // Level 2 and above
-            finalMaxHp *= 1.15;
+            finalMaxHp *= 1.25;
         }
 
         this.maxHp = finalMaxHp;
